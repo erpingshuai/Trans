@@ -1,476 +1,419 @@
 # Trans.nvim
 
-<!--toc:start-->
+> 本地大模型驱动的 Neovim 翻译插件。
 
--   [Trans.nvim](#transnvim)
-    -   [特点](#特点)
-    -   [屏幕截图](#屏幕截图)
-        -   [演示](#演示)
-        -   [离线查询](#离线查询)
-        -   [在线查询演示 (有道)](#在线查询演示-有道)
-        -   [主题](#主题)
-    -   [安装](#安装)
-    -   [配置](#配置)
-    -   [快捷键绑定](#快捷键绑定)
-    -   [高亮组](#高亮组)
-    -   [声明](#声明)
-    -   [感谢](#感谢)
-    -   [贡献](#贡献)
-    -   [从 v1 (main)分支迁移](#从-v1-main分支迁移)
-    -   [待办 (画大饼)](#待办-画大饼)
-    -   [项目情况](#项目情况)
-    <!--toc:end-->
+`Trans.nvim` 基于原作者 [JuanZoran/Trans.nvim](https://github.com/JuanZoran/Trans.nvim) 的 v2 分支重构。
+原来的离线词库 / iciba 后端已经被移除，翻译底层改为
+[Qwen2.5-0.5B-Instruct](https://github.com/QwenLM/Qwen2.5)，
+通过 OpenAI 兼容的本地 HTTP 接口调用；百度、有道在线 API 作为可选备用后端保留。
 
-> **插件默认词库的路径为插件目录**
+> **模型文件不包含在本仓库中。** 模型需要自行下载，详见[模型下载](#模型下载)。
 
-    例如: `lazy` 用户应该在 `$HOME/.local/share/nvim/lazy/Trans.nvim`
+## 目录
+
+-   [特点](#特点)
+-   [与原版 Trans.nvim 的区别](#与原版-transnvim-的区别)
+-   [依赖](#依赖)
+-   [安装](#安装)
+-   [模型下载](#模型下载)
+-   [启动本地服务](#启动本地服务)
+-   [配置](#配置)
+-   [命令](#命令)
+-   [快捷键](#快捷键)
+-   [后端](#后端)
+-   [高亮组](#高亮组)
+-   [健康检查](#健康检查)
+-   [常见问题](#常见问题)
+-   [性能参考](#性能参考)
+-   [致谢](#致谢)
+-   [许可证](#许可证)
 
 ## 特点
 
--   `使用纯 lua 编写`
--   大部分功能可以自定义:
-    -   🔍 高亮
-    -   👀 悬浮大小
-    -   📜 排版顺序
-    -   💬 弹窗大小
-    -   🎉 舒服窗口动画
-    -   更多可以查看[配置](#配置)
--   `离线`和`在线`翻译的支持
--   支持显示:
-    -   🌟 柯林斯星级
-    -   📚 牛津 3000 词汇
-    -   🇨🇳 中文翻译
-    -   🇺🇸 英文翻译 (不是英译中, 而是用英文解释)
-    -   🌱 词根
-    -   etc
--   支持`平滑动画`
--   支持 `normal`和 `visual`模式
-    > <font color='#FF9900'>不支持 visual-block mode</font>
--   本地词库单词量: `430w`
+-   **本地大模型翻译**：默认使用 `Qwen2.5-0.5B-Instruct`，不需要联网
+-   **OpenAI 兼容接口**：支持 llama.cpp、Ollama、LM Studio 等本地服务
+-   **中英互译**：英文单词 / 句子 → 中文，中文 → 英文
+-   **悬浮窗 UI**：沿用 Trans.nvim 的 hover 窗口、动画和自动发音
+-   **可选在线后端**：百度、有道 API 作为大模型失败后的备用
+-   **纯 Lua 编写**：异步调用 `curl`，不阻塞 Neovim
+-   **配置简单**：一个 `Trans.json` 即可
 
-## 屏幕截图
+## 与原版 Trans.nvim 的区别
 
-### 演示
+| 项目 | 原版 Trans.nvim v2 | 本项目 |
+| --- | --- | --- |
+| 默认翻译底层 | ECDICT 离线词库 + 在线 API | 本地 Qwen2.5-0.5B-Instruct |
+| 离线词库 / sqlite | 需要 | 已移除 |
+| iciba 后端 | 有 | 已移除 |
+| 百度 / 有道 | 支持 | 保留，可选备用 |
+| Lua 模块 | `require('Trans')` | `require('Trans')`（相同） |
+| 配置文件 | `Trans.json` | `Trans.json`（相同） |
+| 命令 | `:Translate` / `:TranslateInput` / `:TransPlay` | 相同 |
+| 高亮组前缀 | `Trans*` | 相同 |
 
-> 可以点开声音查看离线自动发音
+## 依赖
 
-### 离线查询
+-   Neovim 0.9+
+-   `curl`
+-   一个本地大模型服务（推荐 [llama.cpp](https://github.com/ggml-org/llama.cpp)）
+-   [Qwen2.5-0.5B-Instruct GGUF](https://modelscope.cn/models/Qwen/Qwen2.5-0.5B-Instruct-GGUF) 模型文件
+-   可选：自动发音需要的系统 TTS 命令
+    -   macOS：`say`
+    -   Linux：`festival`
+    -   Termux：`termux-api`
+    -   Windows：PowerShell
 
-https://user-images.githubusercontent.com/107862700/226175984-1a95bea7-8d66-450e-87e1-ba9c91c37ab8.mp4
-
-### 在线查询演示 (有道)
-
-https://user-images.githubusercontent.com/107862700/226176106-c2962dd3-d66c-499c-b44a-1f471b79fe38.mp4
-
-**使用在线查询需要配置相应的 app_id 和 app_passwd**
-
-配置说明见: [wiki](https://github.com/JuanZoran/Trans.nvim/wiki/%E9%85%8D%E7%BD%AE#%E5%9C%A8%E7%BA%BF%E6%9F%A5%E8%AF%A2%E9%85%8D%E7%BD%AE)
-
-### 主题
-
-> 如果你有更美观或者更适合的配色, 欢迎提 PR  
-> 主题配色在: `lua/Trans/theme.lua`文件中，你只需要添加你主题的表就可以了
-
--   `default`
-    ![default](./theme/default.png)
-
--   `dracula`
-    ![dracula](./theme/dracula.png)
-
--   `tokyonight`
-    ![tokyonight](./theme/tokyonight.png)
+> 不再需要 `sqlite.lua`、`sqlite3`、ECDICT 词库。
 
 ## 安装
 
-_安装之前, 首先需要明确本插件的依赖:_
-
--   [ECDICT](https://github.com/skywind3000/ECDICT): 插件所用的离线单词数据库
--   [sqlite.lua](https://github.com/kkharji/sqlite.lua): 操作数据库所用的库
--   sqlite3: 数据库
-
-<details>
-    <summary>Packer.nvim</summary>
+### lazy.nvim
 
 ```lua
-use {
-    'JuanZoran/Trans.nvim',
-    run = function() require('Trans').install() end, -- 自动下载使用的本地词库
-    requires =  'kkharji/sqlite.lua', ,
-    -- 如果你不需要任何配置的话, 可以直接按照下面的方式启动
-    config = function ()
-        require'Trans'.setup{
-            -- your configuration here
-        }
-    end
-}
-```
-
-**如果你想要使用 Packer 的惰性加载，这里有一个例子**
-
-```lua
-use {
-    "JuanZoran/Trans.nvim",
-    keys = {
-        { {'n', 'x'}, 'mm' }, -- 换成其他你想用的key即可
-        { {'n', 'x'}, 'mk' },
-        { 'n', 'mi' },
-    },
-    run = function() require('Trans').install() end, -- 自动下载使用的本地词库
-    requires = { 'kkharji/sqlite.lua',  },
+{
+    "YOUR_NAME/Trans.nvim",
     config = function()
-        require("Trans").setup {
-            -- your configuration here
-        }
-        vim.keymap.set({"n", 'x'}, "mm", '<Cmd>Translate<CR>') -- 自动判断visual 还是 normal 模式
-        vim.keymap.set({'n', 'x'}, 'mk', '<Cmd>TransPlay<CR>') -- 自动发音选中或者光标下的单词
-        vim.keymap.set('n', 'mi', '<Cmd>TransInput<CR>')
-    end
+        require("Trans").setup({})
+
+        vim.keymap.set('n', 'mi', '<Cmd>TranslateInput<CR>')
+        vim.keymap.set({'n', 'x'}, 'mm', '<Cmd>Translate<CR>')
+        vim.keymap.set({'n', 'x'}, 'mk', '<Cmd>TransPlay<CR>')
+    end,
 }
 ```
 
-</details>
-
-<details>
-    <summary>Lazy.nvim</summary>
+如果使用 `keys` 做惰性加载，可以这样写：
 
 ```lua
-    {
-        "JuanZoran/Trans.nvim",
-        build = function () require'Trans'.install() end,
-        keys = {
-        -- 可以换成其他你想映射的键
-            { 'mm', mode = { 'n', 'x' }, '<Cmd>Translate<CR>', desc = '󰊿 Translate' },
-            { 'mk', mode = { 'n', 'x' }, '<Cmd>TransPlay<CR>', desc = ' Auto Play' },
-            -- 目前这个功能的视窗还没有做好，可以在配置里将view.i改成hover
-            { 'mi', '<Cmd>TranslateInput<CR>', desc = '󰊿 Translate From Input' },
-        },
-        dependencies = { 'kkharji/sqlite.lua', },
-        opts = {
-            -- your configuration there
-        }
-    }
+{
+    "YOUR_NAME/Trans.nvim",
+    keys = {
+        { 'mm', mode = { 'n', 'x' }, '<Cmd>Translate<CR>', desc = 'Trans translate' },
+        { 'mk', mode = { 'n', 'x' }, '<Cmd>TransPlay<CR>', desc = 'Trans play' },
+        { 'mi', '<Cmd>TranslateInput<CR>', desc = 'Trans input' },
+    },
+    config = function()
+        require("Trans").setup({})
+    end,
+}
 ```
 
-</details>
+### packer.nvim
 
-<font color="#FF9900">**注意事项**: </font>
+```lua
+use {
+    'YOUR_NAME/Trans.nvim',
+    config = function()
+        require('Trans').setup {}
+    end,
+}
+```
 
--   下载词典的过程中, 需要能够 `流畅的访问github下载`
+安装示例中的 `YOUR_NAME` 请替换成你自己的 GitHub 用户名。
 
-    如果下载出现问题, 正常是会自动下载
+## 模型下载
 
-    > 词库文件压缩包大小为: **281M**  
-    > 解压缩后的大小大概为: **1.2G**
+模型文件**不包含在仓库中**，请自行下载。推荐使用 ModelScope（国内速度较快）：
 
--   安装后如果不能正常运行, 清尝试运行 `checkhealth Trans`
+```bash
+./scripts/download-model.sh
+```
 
--   **`auto_play`** 的使用:
+默认下载到：
 
-    -   `Linux` 需要安装`festival`
+```text
+~/models/qwen2.5-0.5b-instruct/qwen2.5-0.5b-instruct-q4_k_m.gguf
+```
 
-        > `sudo apt-get install festival festvox-kallpc16k`
+也可以手动下载：
 
-        **如果你想要设置音色，发音可以访问:** [Festival 官方](https://www.cstr.ed.ac.uk/projects/festival/morevoices.html)  
-        可以选择英音、美音、男声、女声
+-   ModelScope（推荐国内使用）：
+    <https://modelscope.cn/models/Qwen/Qwen2.5-0.5B-Instruct-GGUF>
+-   Hugging Face：
+    <https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF>
+-   Ollama：
+    ```bash
+    ollama pull qwen2.5:0.5b-instruct
+    ```
 
-    -   `Termux` 需要安装`termux-api`
+推荐文件：`qwen2.5-0.5b-instruct-q4_k_m.gguf`（约 469 MB）。
 
-    -   `Mac` 使用系统的`say`命令
+> 也对比过体积相近的 Qwen3-0.6B（Q4_K_M / Q6_K）和 Qwen3.5-0.8B（Q4_K_M）：
+> 前者的非思考模式在翻译时容易只输出片段，后者速度慢约一倍且偶有漏译/错译。
+> 综合速度和中英互译准确度，当前版本仍使用 Qwen2.5-0.5B-Instruct。
 
-    -   `Windows` 使用原生的 Powershell 命令, 感谢[PR](https://github.com/JuanZoran/Trans.nvim/pull/34)
+> 模型文件已被 `.gitignore` 忽略（`*.gguf`），不会误提交到仓库。
 
--   `title`的配置，只对`neovim 0.9+`版本有效
+## 启动本地服务
 
-<details>
-    <summary>Festival配置(仅针对linux用户)</summary>
-- 配置文件
-    - 全局配置: `/usr/share/festival/siteinit.scm`
-    - 用户配置: `~/.festivalrc`
+### llama.cpp
 
--   更改声音
+先安装 llama.cpp，任选一种：
 
-    -   在 festival 的 voices 文件内建立自己的文件夹
+```bash
+sudo port install llama.cpp   # macOS + MacPorts
+brew install llama.cpp        # macOS + Homebrew
+```
 
-        > 一般其默认配置目录在`/usr/share/festival/voices`
+也可以直接下载官方预编译包（不需要包管理器）：
 
-        示例:
+```bash
+# Apple Silicon 用 macos-arm64，Intel 用 macos-x64
+mkdir -p ~/tools/llama && cd ~/tools/llama
+curl -L -o llama.tar.gz \
+  https://github.com/ggml-org/llama.cpp/releases/latest/download/llama-b12559-bin-macos-x64.tar.gz
+tar xzf llama.tar.gz
+```
 
-        > `sudo mkdir /usr/share/festival/voices/my_voices`
+> 预编译包的具体文件名会随版本变化，请到
+> <https://github.com/ggml-org/llama.cpp/releases> 查看最新版本。
 
-    -   下载想要的 voices 文件并解压
+然后启动：
 
-        > 可能需要 
+```bash
+./scripts/start-llm.sh
+```
 
-        -   试听[在这里](https://www.cstr.ed.ac.uk/projects/festival/morevoices.html))
-        -   下载[在这里](http://festvox.org/packed/festival/2.5/voices/))
-            > 假设下载的文件在`Downloads`文件夹, 下载的文件为:`festvox_cmu_us_aew_cg.tar.gz`
+脚本会依次查找 `$LLAMA_SERVER`、`PATH` 中的 `llama-server`，以及
+`~/tools/llama/*/llama-server`。
 
-        示例:
+或者手动启动：
 
-        > `cd ~/Downloads && tar -xf festvox_cmu_us_aew_cg.tar.gz`
+```bash
+llama-server \
+  -m ~/models/qwen2.5-0.5b-instruct/qwen2.5-0.5b-instruct-q4_k_m.gguf \
+  --host 127.0.0.1 --port 8080 -c 4096
+```
 
-    -   将音频文件拷贝到 festival 文件夹
-        示例:
+默认接口：
 
-        > `sudo cp -r festival/lib/voices/us/cmu_us_aew_cg/ /usr/share/festival/voices/my_voices/`
+```text
+http://127.0.0.1:8080/v1/chat/completions
+```
 
-    -   在配置文件中设置默认的声音
-        示例:
+### Ollama
 
-        > 加入`(set! voice_default voice_cmu_indic_hin_ab_cg)`到配置文件
+```bash
+ollama pull qwen2.5:0.5b-instruct
+ollama serve
+```
 
-    -   安装完成
+然后在 `Trans.json` 中使用：
 
--   相关说明网站
-    > 可能需要 
-    -   [wiki](https://archlinux.org/packages/community/any/festival-us/) 查看更多详细配置
-    -   [官方网站](http://festvox.org/dbs/index.html)
-    -   [用户手册](http://www.festvox.org/docs/manual-2.4.0/festival_toc.html)
-
-</details>
+```json
+{
+  "llm": {
+    "uri": "http://127.0.0.1:11434/v1/chat/completions",
+    "model": "qwen2.5:0.5b-instruct"
+  }
+}
+```
 
 ## 配置
 
-详细见**wiki**: [基本配置说明](https://github.com/JuanZoran/Trans.nvim/wiki/%E9%85%8D%E7%BD%AE)
+把仓库中的 [`Trans.json.example`](./Trans.json.example) 复制到插件目录，命名为 `Trans.json`：
 
-<details>
-    <summary>默认配置</summary>
+```bash
+cp Trans.json.example Trans.json
+```
+
+最小配置：
+
+```json
+{
+  "llm": {
+    "uri": "http://127.0.0.1:8080/v1/chat/completions",
+    "model": "qwen2.5-0.5b-instruct",
+    "temperature": 0,
+    "max_tokens": 256,
+    "timeout": 60
+  }
+}
+```
+
+### LLM 配置项
+
+| 字段 | 默认值 | 说明 |
+| --- | --- | --- |
+| `uri` | `http://127.0.0.1:8080/v1/chat/completions` | OpenAI 兼容接口地址 |
+| `model` | `qwen2.5-0.5b-instruct` | 模型名；Ollama 用 `qwen2.5:0.5b-instruct` |
+| `temperature` | `0` | 0 最稳定，避免小模型输出半中半英 |
+| `max_tokens` | `256` | 最大输出 token 数 |
+| `timeout` | `60` | curl 超时（秒） |
+| `api_key` | 无 | 需要鉴权的接口才填写 |
+| `system_prompt` | 内置翻译提示词 | 支持 `{{from}}` / `{{to}}` 占位符 |
+| `disable` | `false` | 设为 `true` 可禁用该后端 |
+
+### 百度 / 有道
+
+填写 `app_id` 和 `app_passwd` 后，百度 / 有道才会启用，并作为大模型失败后的备用：
+
+```json
+{
+  "baidu": {
+    "app_id": "你的百度 app_id",
+    "app_passwd": "你的百度密钥"
+  },
+  "youdao": {
+    "app_id": "你的有道 app_id",
+    "app_passwd": "你的有道密钥"
+  }
+}
+```
+
+不使用时设置 `"disable": true`，或者直接不写。
+
+### setup 配置
 
 ```lua
-default_conf = {
-    ---@type string the directory for database file and password file
-    dir      = require 'Trans'.plugin_dir,
-    debug    = true,
-    ---@type 'default' | 'dracula' | 'tokyonight' global Trans theme [see lua/Trans/style/theme.lua]
-    theme    = 'default', -- default | tokyonight | dracula
-    strategy = {
-        ---@type { frontend:string, backend:string | string[] } fallback strategy for mode
-        default = {
-            frontend = 'hover',
-            backend = '*',
+require('Trans').setup {
+    -- 配置文件目录，默认是插件目录
+    dir = require('Trans').plugin_dir,
+
+    -- 主题：default | tokyonight | dracula
+    theme = 'default',
+
+    -- 前端设置
+    frontend = {
+        hover = {
+            width = 37,
+            height = 27,
+            timeout = 8000, -- 等待本地模型的时间（毫秒）
         },
     },
-    ---@type table frontend options
+}
+```
+
+完整默认配置见 [`lua/Trans/core/conf.lua`](./lua/Trans/core/conf.lua)。
+
+## 命令
+
+| 命令 | 说明 |
+| --- | --- |
+| `:Translate` | 翻译光标下单词或选中文本 |
+| `:TranslateInput` | 输入一段文本进行翻译 |
+| `:TransPlay` | 朗读光标下单词或选中文本 |
+
+## 快捷键
+
+```lua
+vim.keymap.set('n', 'mi', '<Cmd>TranslateInput<CR>')
+vim.keymap.set({'n', 'x'}, 'mm', '<Cmd>Translate<CR>')
+vim.keymap.set({'n', 'x'}, 'mk', '<Cmd>TransPlay<CR>')
+```
+
+悬浮窗快捷键：
+
+```lua
+require('Trans').setup {
     frontend = {
-        ---@class TransFrontendOpts
-        ---@field keymaps table<string, string>
-        default = {
-            query     = 'fallback',
-            border    = 'rounded',
-            title     = vim.fn.has 'nvim-0.9' == 1 and {
-                    { '',       'TransTitleRound' },
-                    { '󰊿 Trans', 'TransTitle' },
-                    { '',       'TransTitleRound' },
-                } or nil, -- need nvim-0.9+
-            auto_play = true,
-            ---@type {open: string | boolean, close: string | boolean, interval: integer} Hover Window Animation
-            animation = {
-                open = 'slid', -- 'fold', 'slid'
-                close = 'slid',
-                interval = 12,
-            },
-            timeout   = 2000,
-        },
-        ---@class TransHoverOpts : TransFrontendOpts
         hover = {
-            ---@type integer Max Width of Hover Window
-            width             = 37,
-            ---@type integer Max Height of Hover Window
-            height            = 27,
-            ---@type string -- see: /lua/Trans/style/spinner
-            spinner           = 'dots',
-            ---@type string
-            fallback_message  = '{{notfound}} 翻译超时或没有找到相关的翻译',
-            auto_resize       = true,
-            split_width       = 60,
-            padding           = 10, -- padding for hover window width
-            keymaps           = {
-                -- INFO : No default keymaps anymore, please set it yourself
+            keymaps = {
                 -- pageup       = '<C-u>',
                 -- pagedown     = '<C-d>',
                 -- pin          = '<leader>[',
                 -- close        = '<leader>]',
                 -- toggle_entry = '<leader>;',
-
-                -- play         = '_', -- Deprecated
-            },
-            ---@type string[] auto close events
-            auto_close_events = {
-                'InsertEnter',
-                'CursorMoved',
-                'BufLeave',
-            },
-            ---@type table<string, string[]> order to display translate result
-            order             = {
-                default = {
-                    'str',
-                    'translation',
-                    'definition',
-                },
-                offline = {
-                    'title',
-                    'tag',
-                    'pos',
-                    'exchange',
-                    'translation',
-                    'definition',
-                },
-                youdao = {
-                    'title',
-                    'translation',
-                    'definition',
-                    'web',
-                },
-            },
-            icon              = {
-                -- or use emoji
-                list        = '●', -- ● | ○ | ◉ | ◯ | ◇ | ◆ | ▪ | ▫ | ⬤ | 🟢 | 🟡 | 🟣 | 🟤 | 🟠| 🟦 | 🟨 | 🟧 | 🟥 | 🟪 | 🟫 | 🟩 | 🟦
-                star        = '', -- ⭐ | ✴ | ✳ | ✲ | ✱ | ✰ | ★ | ☆ | 🌟 | 🌠 | 🌙 | 🌛 | 🌜 | 🌟 | 🌠 | 🌌 | 🌙 |
-                notfound    = '󰆆 ', --❔ | ❓ | ❗ | ❕|
-                yes         = '✔', -- ✅ | ✔️ | ☑
-                no          = '', -- ❌ | ❎ | ✖ | ✘ | ✗ |
-                cell        = '■', -- ■  | □ | ▇ | ▏ ▎ ▍ ▌ ▋ ▊ ▉
-                web         = '󰖟', --🌍 | 🌎 | 🌏 | 🌐 |
-                tag         = '',
-                pos         = '',
-                exchange    = '',
-                definition  = '󰗊',
-                translation = '󰊿',
             },
         },
     },
 }
 ```
 
-</details>
+## 后端
 
-## 快捷键绑定
+| 后端 | 名称 | 默认 | 说明 |
+| --- | --- | --- | --- |
+| 本地大模型 | `llm` | 启用 | OpenAI 兼容接口 |
+| 百度 | `baidu` | 配置密钥后启用 | 备用 |
+| 有道 | `youdao` | 配置密钥后启用 | 备用 |
 
-**示例:**
-
-> 示例中展示, 将`mm`映射成快捷键
-
-```lua
-vim.keymap.set('n', 'mi', '<Cmd>TranslateInput<CR>')
-vim.keymap.set({'n', 'x'}, 'mm', '<Cmd>Translate<CR>')
-vim.keymap.set({'n', 'x'}, 'mk', '<Cmd>TransPlay<CR>') -- 自动发音选中或者光标下的单词
-```
-
-**窗口快捷键**
-
-```lua
-require 'Trans'.setup {
-    frontend = {
-        hover = {
-            keymaps = {
-                -- pageup       = 'whatever you want',
-                -- pagedown     = 'whatever you want',
-                -- pin          = 'whatever you want',
-                -- close        = 'whatever you want',
-                -- toggle_entry = 'whatever you want',
-            },
-        },
-    },
-    }
-}
-```
-
-> 当窗口没有打开的时候, key 会被使用`vim.api.nvim_feedkey`来执行
+翻译时会按 `llm` → `baidu` → `youdao` 的顺序尝试。
 
 ## 高亮组
 
-所有主题可见 `lua/Trans/style/theme.lua`
+所有高亮组以 `Trans` 开头，例如：
 
-<details>
+-   `TransWord`
+-   `TransTranslation`
+-   `TransDefinition`
+-   `TransTitle`
+-   `TransBorder`
+-   `TransFailed`
+-   `TransWaitting`
 
-<summary>默认主题</summary>
+完整配色见 [`lua/Trans/style/theme.lua`](./lua/Trans/style/theme.lua)。
 
-```lua
-TransWord = {
-    fg = '#7ee787',
-    bold = true,
-}
-TransPhonetic = {
-    link = 'Linenr'
-}
-TransTitle = {
-    fg = '#0f0f15',
-    bg = '#75beff',
-    bold = true,
-}
-TransTitleRound = {
-    fg = '#75beff',
-}
-TransTag = {
-    -- fg = '#e5c07b',
-    link = '@tag'
-}
-TransExchange = {
-    link = 'TransTag',
-}
-TransPos = {
-    link = 'TransTag',
-}
-TransTranslation = {
-    link = 'TransWord',
-}
-TransDefinition = {
-    link = 'Moremsg',
-}
-TransWin = {
-    link = 'Normal',
-}
-TransBorder = {
-    fg = '#89B4FA',
-}
-TransCollins = {
-    fg = '#faf743',
-    bold = true,
-}
-TransFailed = {
-    fg = '#7aa89f',
-}
-TransWaitting = {
-    link = 'MoreMsg'
-}
-TransWeb = {
-    link = 'MoreMsg',
-}
+## 健康检查
+
+```vim
+:checkhealth Trans
 ```
 
-</details>
+会检查 Neovim 版本、`curl`、`Trans.json` 以及当前 LLM 接口配置。
 
-## 声明
+## 常见问题
 
--   本插件词典基于[ECDICT](https://github.com/skywind3000/ECDICT)
+**翻译超时 / 无法连接本地模型**
 
-## 感谢
+确认本地服务已经启动，并且 `Trans.json` 中的 `uri` 与启动地址一致：
 
--   [ECDICT](https://github.com/skywind3000/ECDICT) 本地词典的提供
--   [sqlite.lua](https://github.com/kharji/sqlite.lua) 数据库访问
--   [T.vim](https://github.com/sicong-li/T.vim) 灵感来源
+```bash
+curl http://127.0.0.1:8080/v1/models
+```
 
-## 贡献
+**模型输出多余的解释**
 
-> 更新比较频繁, 文档先鸽了 (wiki 写了一小部分  
-> 如果你想要参加这个项目, 可以提 issue, 我会把文档补齐
+把 `temperature` 设为 `0`，或者自定义 `system_prompt`，明确要求“只输出译文”。
 
-## 从 v1 (main)分支迁移
+**百度 / 有道没有生效**
 
-见[wiki](<https://github.com/JuanZoran/Trans.nvim/wiki/%E4%BB%8E(v1)main%E5%88%86%E6%94%AF%E8%BF%81%E7%A7%BB>)
+检查是否填写了 `app_id` 和 `app_passwd`，以及是否设置了 `"disable": true`。
 
-## 待办 (画大饼)
+**第一次翻译比较慢**
 
--   [x] 快捷键定义
--   [x] 自动读音
--   [x] 在线多引擎异步查询
--   [x] `句子翻译` | `中翻英` 的支持
--   [x] 迁移文档
--   [ ] 多风格样式查询
--   [ ] 变量命名的支持
--   [ ] 历史查询结果保存
--   [ ] 翻译结果替换
+本地模型首次加载需要时间。可以提前启动服务，或者把 `frontend.hover.timeout` 调大。
 
-## 项目情况
+**模型文件太大，不想提交到 Git**
 
-[![Star History Chart](https://api.star-history.com/svg?repos=JuanZoran/Trans.nvim&type=Date)](https://star-history.com/#JuanZoran/Trans.nvim&Date)
+模型文件默认放在 `~/models/`，并且 `.gitignore` 已忽略 `*.gguf`、`*.safetensors`、`*.bin` 和 `models/`。
+
+## 性能参考
+
+以下数据来自 Intel i7-9750H（6 线程 CPU 推理，`Q4_K_M` 量化）：
+
+| 场景 | 耗时 |
+| --- | --- |
+| 单词（如 `resilient`、`deadlock`） | 约 0.1 秒 |
+| 短语（如 `race condition`、`pull request`） | 约 0.1 秒 |
+| 整句（20～30 个汉字 / 10～15 个英文单词） | 约 0.3～0.5 秒 |
+| 服务冷启动后第一次翻译 | 约 0.7～1.3 秒 |
+| 内存占用 | 约 630 MB |
+
+实际速度取决于 CPU / GPU 性能，使用 Metal、CUDA 等加速会更快。
+
+翻译质量方面：
+
+-   常见单词、技术术语和固定搭配表现不错，例如 `race condition → 竞态条件`、`deadlock → 死锁`、`pull request → 拉取请求`、`画蛇添足 → gild the lily`
+-   日常句子可以稳定翻译，`temperature = 0` 时输出基本确定
+-   0.5B 模型能力有限，长段落、专业领域文本或需要上下文的歧义词仍可能出错
+-   内置了少量中英技术词 / 习语示例，可按需修改 `lua/Trans/backend/llm.lua` 中的 `EXAMPLES`
+
+## 致谢
+
+-   原项目：[JuanZoran/Trans.nvim](https://github.com/JuanZoran/Trans.nvim)
+-   原作者：Zoran（[JuanZoran](https://github.com/JuanZoran)）
+-   [Trans.nvim 的所有贡献者](https://github.com/JuanZoran/Trans.nvim/graphs/contributors)
+-   原项目致谢：
+    -   [ECDICT](https://github.com/skywind3000/ECDICT)（当前版本已不再依赖）
+    -   [sqlite.lua](https://github.com/kkharji/sqlite.lua)（当前版本已不再依赖）
+    -   [T.vim](https://github.com/sicong-li/T.vim) 灵感来源
+-   当前版本使用：
+    -   [Qwen2.5](https://github.com/QwenLM/Qwen2.5)
+    -   [llama.cpp](https://github.com/ggml-org/llama.cpp)
+    -   [Neovim](https://github.com/neovim/neovim)
+
+## 许可证
+
+本项目基于原版 Trans.nvim 修改，遵循 MIT 许可证。
+原始版权归 Zoran 所有，详见 [LICENCE](./LICENCE)。

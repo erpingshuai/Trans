@@ -68,8 +68,6 @@ end
 function M:get_available_result()
     local result = self.result
 
-    if result['offline'] then return result['offline'], 'offline' end
-
     for _, backend in ipairs(self.backends) do
         if result[backend.name] then
             ---@diagnostic disable-next-line: return-type-mismatch

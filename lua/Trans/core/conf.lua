@@ -35,7 +35,7 @@ return {
                 close = 'slid',
                 interval = 12,
             },
-            timeout   = 2000,
+            timeout   = 8000, -- local LLM may need longer for the first request
         },
         ---@class TransHoverOpts : TransFrontendOpts
         hover = {

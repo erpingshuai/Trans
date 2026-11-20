@@ -11,13 +11,14 @@ local Trans = require 'Trans'
 ---@field uri string @request uri
 ---@field method 'get' | 'post' @request method
 ---@field formatter fun(body: table, data: TransData): TransResult|false|nil @formatter
----@field get_query fun(data: TransData): table<string, string> @get query
+---@field get_query fun(data: TransData): table<string, string>|table @get query or request body
 ---@field header? table<string, string> | fun(data: TransData): table<string, string> @request header
----@field debug? fun(body: table?) @debug
+---@field timeout? integer @request timeout in seconds
+---@field debug? fun(body: table?, output: RequestResult?) @debug
 
 
 local conf = Trans.conf
---- INFO :Parse online engine keys config file
+-- INFO :Parse online engine keys config file
 local path = conf.dir .. '/Trans.json'
 local file = io.open(path, 'r')
 
@@ -25,16 +26,65 @@ local file = io.open(path, 'r')
 local user_conf = {}
 if file then
     local content = file:read '*a'
-    user_conf = vim.json.decode(content) or user_conf
     file:close()
+
+    local ok, decoded = pcall(vim.json.decode, content)
+    if ok and type(decoded) == 'table' then
+        -- INFO :Support both array format [{ name = 'llm', ... }]
+        --        and object format { llm = { ... } }
+        if decoded.name then
+            user_conf[decoded.name] = decoded
+        else
+            for key, config in pairs(decoded) do
+                if type(config) == 'table' then
+                    local name = config.name or (type(key) == 'string' and key or nil)
+                    if name then
+                        config.name = name
+                        user_conf[name] = config
+                    end
+                end
+            end
+        end
+    end
+end
+
+
+---Check whether an API backend has enough credentials configured
+---@param config table?
+---@return boolean
+local function has_credentials(config)
+    return config ~= nil and config.disable ~= true and config.app_id ~= nil and config.app_passwd ~= nil
 end
 
 
 local all_name = {}
-for _, config in ipairs(user_conf) do
-    if not config.disable then
-        all_name[#all_name + 1] = config.name
-        user_conf[config.name] = config
+local seen = {}
+
+---Register a backend if it is enabled
+---@param name string
+---@param enabled boolean
+local function register(name, enabled)
+    if enabled and not seen[name] then
+        seen[name] = true
+        all_name[#all_name + 1] = name
+    end
+end
+
+
+-- INFO :LLM is the primary backend and is enabled by default.
+register('llm', not (user_conf.llm and user_conf.llm.disable))
+
+-- INFO :Online API backends are optional fallbacks and only enabled when configured.
+register('baidu', has_credentials(user_conf.baidu))
+register('youdao', has_credentials(user_conf.youdao))
+
+-- INFO :Allow extra user defined backends (a matching module must exist).
+for name, config in pairs(user_conf) do
+    if not seen[name] and config.disable ~= true then
+        local ok = pcall(require, 'Trans.backend.' .. name)
+        if ok then
+            register(name, true)
+        end
     end
 end
 

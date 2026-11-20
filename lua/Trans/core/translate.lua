@@ -33,27 +33,36 @@ local function do_query(data, backend)
     end
 
     local function handle(output)
-        local status, body = pcall(vim.json.decode, output.body)
-        if not status or not body then
-            if not Trans.conf.debug then
-                if backend.debug then pcall(backend.debug, body) end
-                data.trace[name] = output
-            end
-
+        local status, body = pcall(vim.json.decode, output.body or '')
+        if not status or type(body) ~= 'table' then
+            if backend.debug then pcall(backend.debug, body, output) end
+            data.trace[name] = output
             data.result[name] = false
             return
         end
 
         local f_ok, res = pcall(formatter, body, data)
+        if (not f_ok or not res) and backend.debug then
+            pcall(backend.debug, body, output)
+        end
         data.result[name] = f_ok and res or false
     end
 
     local c_ok = pcall(function()
-        Trans.curl[method](uri, {
-            query = query,
-            callback = handle,
-            header = header,
-        })
+        if method == 'post' then
+            Trans.curl.post(uri, {
+                body     = query,
+                callback = handle,
+                header   = header,
+                timeout  = backend.timeout,
+            })
+        else
+            Trans.curl.get(uri, {
+                query    = query,
+                callback = handle,
+                header   = header,
+            })
+        end
     end)
 
     if not c_ok then
@@ -65,11 +74,8 @@ end
 local strategy = {
     fallback = function(data)
         local result = data.result
-        Trans.backend.offline.query(data)
-
-        if result.offline then return true end
-
         local update = data.frontend:wait()
+
         for _, backend in ipairs(data.backends) do
             do_query(data, backend)
 

@@ -7,3 +7,9 @@ tts/package-lock.json
 Trans.json
 ultimate.db
 lua/.luarc.json
+
+# Local model files are not part of this repository.
+*.gguf
+*.safetensors
+*.bin
+models/

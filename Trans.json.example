@@ -1,0 +1,22 @@
+{
+  "llm": {
+    "name": "llm",
+    "uri": "http://127.0.0.1:8080/v1/chat/completions",
+    "model": "qwen2.5-0.5b-instruct",
+    "temperature": 0,
+    "max_tokens": 256,
+    "timeout": 60
+  },
+  "baidu": {
+    "name": "baidu",
+    "app_id": "your_baidu_app_id",
+    "app_passwd": "your_baidu_app_passwd",
+    "disable": true
+  },
+  "youdao": {
+    "name": "youdao",
+    "app_id": "your_youdao_app_id",
+    "app_passwd": "your_youdao_app_passwd",
+    "disable": true
+  }
+}
