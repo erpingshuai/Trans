@@ -71,7 +71,7 @@
 
 ```lua
 {
-    "YOUR_NAME/Trans.nvim",
+    "erpingshuai/Trans",
     config = function()
         require("Trans").setup({})
 
@@ -86,7 +86,7 @@
 
 ```lua
 {
-    "YOUR_NAME/Trans.nvim",
+    "erpingshuai/Trans",
     keys = {
         { 'mm', mode = { 'n', 'x' }, '<Cmd>Translate<CR>', desc = 'Trans translate' },
         { 'mk', mode = { 'n', 'x' }, '<Cmd>TransPlay<CR>', desc = 'Trans play' },
@@ -102,14 +102,14 @@
 
 ```lua
 use {
-    'YOUR_NAME/Trans.nvim',
+    'erpingshuai/Trans',
     config = function()
         require('Trans').setup {}
     end,
 }
 ```
 
-安装示例中的 `YOUR_NAME` 请替换成你自己的 GitHub 用户名。
+安装示例中的仓库地址为 `erpingshuai/Trans`，也可以换成你自己的 fork。
 
 ## 模型下载
 
