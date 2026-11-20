@@ -80,7 +80,10 @@ llama-server 在后台启动，等健康检查通过后再翻译。日志在
 模型默认位置： >
     ~/models/qwen2.5-0.5b-instruct/qwen2.5-0.5b-instruct-q4_k_m.gguf
 <
-其他位置用 Trans.json 的 `model_path` 指定。
+放到其他位置时，在 Trans.json 中指定 `model_path`： >
+    { "llm": { "model_path": "/你的目录/qwen2.5-0.5b-instruct-q4_k_m.gguf" } }
+<
+把模型放好（默认路径或用 model_path 指定）后，不需要其他操作，按翻译键即可使用。
 `llama-server` 会在 PATH、~/.local/share/nvim/Trans/llama/llama-b12559/、
 ~/tools/llama/*/ 中查找，也可用 `server_bin` 直接指定。缺少任一文件时不会
 自动启动，只会提示存放位置。
