@@ -182,13 +182,13 @@ tar xzf llama.tar.gz
 ```bash
 llama-server \
   -m ~/models/qwen2.5-0.5b-instruct/qwen2.5-0.5b-instruct-q4_k_m.gguf \
-  --host 127.0.0.1 --port 8080 -c 4096
+  --host 127.0.0.1 --port 18080 -c 4096
 ```
 
 默认接口：
 
 ```text
-http://127.0.0.1:8080/v1/chat/completions
+http://127.0.0.1:18080/v1/chat/completions
 ```
 
 ### Ollama
@@ -222,7 +222,7 @@ cp Trans.json.example Trans.json
 ```json
 {
   "llm": {
-    "uri": "http://127.0.0.1:8080/v1/chat/completions",
+    "uri": "http://127.0.0.1:18080/v1/chat/completions",
     "model": "qwen2.5-0.5b-instruct",
     "temperature": 0,
     "max_tokens": 256,
@@ -235,7 +235,7 @@ cp Trans.json.example Trans.json
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
-| `uri` | `http://127.0.0.1:8080/v1/chat/completions` | OpenAI 兼容接口地址 |
+| `uri` | `http://127.0.0.1:18080/v1/chat/completions` | OpenAI 兼容接口地址 |
 | `model` | `qwen2.5-0.5b-instruct` | 模型名；Ollama 用 `qwen2.5:0.5b-instruct` |
 | `temperature` | `0` | 0 最稳定，避免小模型输出半中半英 |
 | `max_tokens` | `256` | 最大输出 token 数 |
@@ -359,7 +359,7 @@ require('Trans').setup {
 确认本地服务已经启动，并且 `Trans.json` 中的 `uri` 与启动地址一致：
 
 ```bash
-curl http://127.0.0.1:8080/v1/models
+curl http://127.0.0.1:18080/v1/models
 ```
 
 **模型输出多余的解释**

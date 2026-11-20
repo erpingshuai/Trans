@@ -15,9 +15,9 @@ return function()
         '  ./scripts/start-llm.sh',
         '或:',
         '  llama-server -m qwen2.5-0.5b-instruct-q4_k_m.gguf \\',
-        '    --host 127.0.0.1 --port 8080 -c 4096',
+        '    --host 127.0.0.1 --port 18080 -c 4096',
         '',
-        '默认接口: http://127.0.0.1:8080/v1/chat/completions',
+        '默认接口: http://127.0.0.1:18080/v1/chat/completions',
         '配置文件: ' .. Trans.conf.dir .. '/Trans.json',
     }, '\n'), vim.log.levels.INFO)
 end

@@ -6,7 +6,7 @@ set -euo pipefail
 
 MODEL="${1:-$HOME/models/qwen2.5-0.5b-instruct/qwen2.5-0.5b-instruct-q4_k_m.gguf}"
 HOST="${HOST:-127.0.0.1}"
-PORT="${PORT:-8080}"
+PORT="${PORT:-18080}"
 CTX="${CTX:-4096}"
 THREADS="${THREADS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
 

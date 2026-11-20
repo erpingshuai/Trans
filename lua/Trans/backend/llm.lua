@@ -10,7 +10,7 @@
 ---@field system_prompt? string prompt template, supports {{from}} and {{to}}
 ---@field disable? boolean
 local M = {
-    uri          = 'http://127.0.0.1:8080/v1/chat/completions',
+    uri          = 'http://127.0.0.1:18080/v1/chat/completions',
     model        = 'qwen2.5-0.5b-instruct',
     -- 0 keeps small models deterministic and avoids half-translated output
     temperature  = 0,
