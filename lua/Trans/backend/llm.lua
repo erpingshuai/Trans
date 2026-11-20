@@ -79,13 +79,14 @@ local DEFAULT_DICT_PROMPT = table.concat({
     'three lines and nothing else:',
     'Line 1: IPA pronunciation in slashes',
     'Line 2: part of speech only, such as adj. or n.',
-    'Line 3: one short English definition, at most 12 words',
+    'Line 3: one short English definition of the GIVEN word, at most 12 words',
     'No labels, no numbering, no markdown.',
+    'Describe the user word. Never copy the example definition.',
     '',
-    'Example for "fragile":',
-    '/ˈfrædʒaɪl/',
+    'Example for "serene":',
+    '/səˈriːn/',
     'adj.',
-    'easily broken or damaged',
+    'calm and peaceful',
 }, '\n')
 
 ---Build system prompt for the current translation request
@@ -172,9 +173,10 @@ local function get_content(body)
     end
 end
 
----Parse the 3-line dictionary response into its fields.
+---Parse the 3-line dictionary response. Every field is optional: a bad or
+---missing line must not discard the other two.
 ---@param content string
----@return { phonetic: string, pos: string, definition: string }?
+---@return { phonetic: string?, pos: string?, definition: string? }?
 local function parse_dictionary(content)
     local lines = {}
     for line in content:gmatch('[^\n]+') do
@@ -184,38 +186,54 @@ local function parse_dictionary(content)
         end
     end
 
-    -- Some small models merge the IPA and part-of-speech lines.
-    if lines[1] then
-        local ipa, pos = lines[1]:match('^(/[^\n]-/)[%s]+([%a]+%.)')
+    -- Some small models merge the IPA and part-of-speech into one line.
+    for i = 1, #lines do
+        local ipa, pos = lines[i]:match('^(/[^\n]-/)[%s]+([%a]+%.)')
         if ipa and pos then
-            lines[1] = ipa
-            table.insert(lines, 2, pos)
+            lines[i] = ipa
+            table.insert(lines, i + 1, pos)
+            break
         end
     end
 
-    local phonetic, pos, definition = lines[1], lines[2], lines[3]
-    if not phonetic or not pos or not definition then
-        return
+    local dict = {}
+
+    -- IPA: the first slash-delimited token on the first line.
+    local first = lines[1] or ''
+    local ipa = first:match('(/[^\n]-/)')
+    if ipa then
+        dict.phonetic = ipa
     end
-    if not phonetic:match('^/.+/$') then
-        return
+
+    -- Part of speech: a short leading token such as adj. / n. / noun.
+    local pos_line = lines[2] or ''
+    local pos = pos_line:match('^([%a]+%.?)')
+    if pos and not pos:match('^/') then
+        dict.pos = pos
     end
-    if not pos:match('^%a+%.?$') then
-        return
+
+    -- English definition: the third line when it is not CJK.
+    local definition = lines[3] or ''
+    if #definition > 2 and Trans.util.is_english(definition)
+        and not definition:match('^[%a]+%.$') then
+        dict.definition = definition
     end
-    if not Trans.util.is_english(definition) then
+
+    -- If the model skipped the POS line, its second line may be the definition.
+    if not dict.pos and not dict.definition and #pos_line > 10
+        and Trans.util.is_english(pos_line) then
+        dict.definition = pos_line
+    end
+
+    if not dict.phonetic and not dict.pos and not dict.definition then
         return
     end
 
-    return {
-        phonetic   = phonetic,
-        pos        = pos,
-        definition = definition,
-    }
+    return dict
 end
 
----Fetch IPA / part of speech / English definition for a single English word
----and merge them into the translation result.
+---Fetch IPA / part of speech / English definition for an English word or short
+---phrase and merge the available fields into the translation result.
 ---@param data TransData
 ---@param result TransResult
 ---@param callback fun() called when enrichment finished (success or failure)
@@ -227,7 +245,10 @@ function M.enrich(data, result, callback)
         callback()
     end
 
-    if data.from ~= 'en' or not data.is_word then
+    -- Skip Chinese input and long sentences; keep words and short phrases.
+    local _, spaces = data.str:gsub('%s+', ' ')
+    local word_count = spaces + 1
+    if data.from ~= 'en' or #data.str > 60 or word_count > 6 then
         finish()
         return
     end
@@ -261,13 +282,19 @@ function M.enrich(data, result, callback)
                     if content then
                         local dict = parse_dictionary(clean(content))
                         if dict then
-                            result.title = {
-                                word     = data.str,
-                                phonetic = dict.phonetic,
-                            }
-                            local meaning = (result.translation and result.translation[1]) or data.str
-                            result.pos = { [dict.pos] = meaning }
-                            result.definition = { dict.definition }
+                            if dict.phonetic then
+                                result.title = {
+                                    word     = data.str,
+                                    phonetic = dict.phonetic,
+                                }
+                            end
+                            if dict.pos then
+                                local meaning = (result.translation and result.translation[1]) or data.str
+                                result.pos = { [dict.pos] = meaning }
+                            end
+                            if dict.definition then
+                                result.definition = { dict.definition }
+                            end
                         end
                     end
                 end

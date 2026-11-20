@@ -86,14 +86,17 @@ local strategy = {
 
             if result[name] then
                 -- The LLM backend adds IPA, part of speech and an English note
-                -- for single English words with a second, lightweight request.
+                -- with a second, lightweight request. Wait for it explicitly:
+                -- the spinner may have exhausted its frames while translating.
                 local enriched = false
                 if backend.enrich then
                     backend.enrich(data, result[name], function()
                         enriched = true
                     end)
 
-                    while not enriched and update(backend) do
+                    local deadline = vim.uv.hrtime() + 10 * 1000000000
+                    while not enriched and vim.uv.hrtime() < deadline do
+                        Trans.util.pause(200)
                     end
                 end
                 return true
