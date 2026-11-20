@@ -47,26 +47,35 @@ local function check_llm()
         return
     end
 
+    local host, port = Trans.server.parse_uri(backend.uri)
+    local manageable =
+        backend.auto_start ~= false
+        and host and Trans.server.is_local(host)
+        and port ~= 11434
+
     local status = Trans.server.status()
     if status.running then
-        ok 'Local LLM service is running'
-    elseif backend.auto_start == false then
-        warn 'Local LLM service is not running (auto_start = false; external service expected)'
+        ok 'LLM service is running'
+    elseif not manageable then
+        warn 'LLM service is external (auto_start = false or non-local endpoint); Trans will not start it'
     else
         warn('Local LLM service is not running yet; it will start automatically on first :Translate. '
             .. 'Log: ' .. tostring(status.log))
     end
 
-    if status.model then
-        ok(string.format('GGUF model: %s', status.model))
-    else
-        warn('GGUF model not found; it will be downloaded on first :Translate')
-    end
+    -- Only a locally managed llama.cpp service needs a GGUF model and binary.
+    if manageable then
+        if status.model then
+            ok(string.format('GGUF model: %s', status.model))
+        else
+            warn('GGUF model not found; it will be downloaded on first :Translate')
+        end
 
-    if status.server then
-        ok(string.format('llama-server: %s', status.server))
-    else
-        warn('llama-server not found; it will be downloaded on first :Translate')
+        if status.server then
+            ok(string.format('llama-server: %s', status.server))
+        else
+            warn('llama-server not found; it will be downloaded on first :Translate')
+        end
     end
 end
 
