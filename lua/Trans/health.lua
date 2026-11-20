@@ -68,13 +68,13 @@ local function check_llm()
         if status.model then
             ok(string.format('GGUF model: %s', status.model))
         else
-            warn('GGUF model not found; it will be downloaded on first :Translate')
+            warn('GGUF model not found; download it and place it in ~/models/qwen2.5-0.5b-instruct/ (see README)')
         end
 
         if status.server then
             ok(string.format('llama-server: %s', status.server))
         else
-            warn('llama-server not found; it will be downloaded on first :Translate')
+            warn('llama-server not found; install llama.cpp or set llm.server_bin (see README)')
         end
     end
 end

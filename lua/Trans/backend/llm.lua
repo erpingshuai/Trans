@@ -8,7 +8,7 @@
 ---@field max_tokens? integer
 ---@field timeout? integer curl timeout in seconds
 ---@field system_prompt? string prompt template, supports {{from}} and {{to}}
----@field auto_start? boolean download/start the local llama.cpp server on first use
+---@field auto_start? boolean start an already installed local llama.cpp server on first use (no downloads)
 ---@field model_path? string path to the GGUF file
 ---@field server_bin? string path to the llama-server binary
 ---@field ctx? integer llama.cpp context size

@@ -72,12 +72,20 @@ Trans.nvim 是一个基于本地大模型的 Neovim 翻译插件。
 ==============================================================================
 4. 模型与服务                                                *Trans-model*
 
-装好插件后不需要手动下载模型或启动服务。第一次执行 :Translate 时，插件会
-检查 127.0.0.1:18080 的健康接口；必要时自动下载 GGUF 模型和 llama.cpp
-预编译包，后台启动服务，等健康检查通过后再翻译。日志在
-~/.cache/nvim/Trans-llm.log，进度可用 :checkhealth Trans 查看。
+插件不会下载任何文件，请自行下载模型并安装 llama.cpp。准备好之后，第一次
+执行 :Translate 时会检查 127.0.0.1:18080 的健康接口；没运行就用找到的模型和
+llama-server 在后台启动，等健康检查通过后再翻译。日志在
+~/.cache/nvim/Trans-llm.log，状态可用 :checkhealth Trans 查看。
 
-想提前准备，也可以手动下载： >
+模型默认位置： >
+    ~/models/qwen2.5-0.5b-instruct/qwen2.5-0.5b-instruct-q4_k_m.gguf
+<
+其他位置用 Trans.json 的 `model_path` 指定。
+`llama-server` 会在 PATH、~/.local/share/nvim/Trans/llama/llama-b12559/、
+~/tools/llama/*/ 中查找，也可用 `server_bin` 直接指定。缺少任一文件时不会
+自动启动，只会提示存放位置。
+
+下载模型： >
     ./scripts/download-model.sh
 <
 默认下载到： >

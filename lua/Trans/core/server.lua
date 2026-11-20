@@ -1,4 +1,8 @@
----Prepare and auto-start the local OpenAI-compatible llama.cpp server.
+---Auto-start the local OpenAI-compatible llama.cpp server.
+---
+---This module never downloads anything. The user downloads the GGUF model and
+---installs llama.cpp themselves (see README). On first use Trans only checks
+---that both already exist, and if so starts the service in the background.
 local Trans = require 'Trans'
 
 local M = {}
@@ -7,11 +11,6 @@ local uv = vim.uv or vim.loop
 
 local LLAMA_VERSION = 'b12559'
 local MODEL_FILE = 'qwen2.5-0.5b-instruct-q4_k_m.gguf'
-local MODEL_MIN_SIZE = 400 * 1024 * 1024
-local MODEL_URLS = {
-    'https://modelscope.cn/models/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/master/' .. MODEL_FILE,
-    'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/' .. MODEL_FILE,
-}
 
 local state = {
     starting  = false,
@@ -53,14 +52,9 @@ local function default_model_path()
     return vim.fn.expand('~/models/qwen2.5-0.5b-instruct/' .. MODEL_FILE)
 end
 
----@return string
-local function managed_dir()
-    return vim.fn.stdpath 'data' .. '/Trans/llama'
-end
-
 ---@return string?
 local function managed_server()
-    local dir = managed_dir() .. '/llama-' .. LLAMA_VERSION
+    local dir = vim.fn.stdpath 'data' .. '/Trans/llama/llama-' .. LLAMA_VERSION
     for _, name in ipairs { 'llama-server', 'llama-server.exe' } do
         local path = dir .. '/' .. name
         if vim.fn.executable(path) == 1 then
@@ -112,7 +106,7 @@ function M.is_local(host)
         or host == '::'
 end
 
----Find a llama-server binary.
+---Find a llama-server binary. No downloads are performed here.
 ---@param configured string?
 ---@return string?
 function M.find_server(configured)
@@ -139,7 +133,7 @@ function M.find_server(configured)
     end
 end
 
----Find the GGUF model file.
+---Find the GGUF model file. No downloads are performed here.
 ---@param configured string?
 ---@return string?
 function M.find_model(configured)
@@ -159,153 +153,29 @@ function M.find_model(configured)
     end
 end
 
----Run a command and wait for it to finish.
----@param cmd string[]
----@param timeout integer?
----@return boolean
-local function run(cmd, timeout)
-    local done, code = false, nil
-    local job = vim.fn.jobstart(cmd, {
-        stdout = '',
-        stderr = '',
-        on_exit = function(_, c)
-            done = true
-            code = c
-        end,
-    })
-
-    if job <= 0 then
-        return false
+---Explain what the user must provide when a local service cannot be started.
+---@param model string?
+---@param server string?
+local function notify_missing(model, server)
+    if state.missing_notified then
+        return
     end
+    state.missing_notified = true
 
-    vim.wait(timeout or 600000, function()
-        return done
-    end, 200)
-
-    return done and code == 0
-end
-
----@param url string
----@param dest string
----@param resume boolean?
----@return boolean
-local function download(url, dest, resume)
-    vim.fn.mkdir(vim.fn.fnamemodify(dest, ':h'), 'p')
-
-    local cmd = { 'curl', '-L', '--fail', '--create-dirs', '--retry', '2' }
-    if resume and vim.fn.filereadable(dest) == 1 then
-        vim.list_extend(cmd, { '-C', '-' })
-    end
-    vim.list_extend(cmd, { '-o', dest, url })
-
-    return run(cmd)
-end
-
----@return string? asset
----@return 'tar'|'zip'?
-local function llama_asset()
-    local uname = uv.os_uname()
-    local sys, machine = uname.sysname, uname.machine
-    local arm = machine == 'arm64' or machine == 'aarch64'
-    local arch = arm and 'arm64' or 'x64'
-
-    if sys == 'Darwin' then
-        return ('llama-%s-bin-macos-%s.tar.gz'):format(LLAMA_VERSION, arch), 'tar'
-    elseif sys == 'Linux' then
-        return ('llama-%s-bin-ubuntu-%s.tar.gz'):format(LLAMA_VERSION, arch), 'tar'
-    elseif sys == 'Windows_NT' then
-        return ('llama-%s-bin-win-cpu-%s.zip'):format(LLAMA_VERSION, arch), 'zip'
-    end
-end
-
----Download the model and llama-server if they are missing.
----@return boolean
-function M.install()
-    local backend = Trans.backend.llm
-    local model = M.find_model(backend.model_path)
+    local lines = { '本地服务缺少必要文件，不会自动启动：' }
 
     if not model then
-        local dest = expand(backend.model_path) or default_model_path()
-        notify('首次使用，正在下载模型（约 469 MB），请稍候...', vim.log.levels.INFO)
-
-        local ok = false
-        for _, url in ipairs(MODEL_URLS) do
-            ok = download(url, dest, true)
-            if not ok then
-                vim.fn.delete(dest)
-                ok = download(url, dest, false)
-            end
-
-            if ok and vim.fn.getfsize(dest) >= MODEL_MIN_SIZE then
-                break
-            end
-
-            ok = false
-            vim.fn.delete(dest)
-        end
-
-        if not ok then
-            notify('模型下载失败，请检查网络或手动运行 scripts/download-model.sh', vim.log.levels.ERROR)
-            return false
-        end
-
-        model = dest
-        notify('模型下载完成: ' .. dest, vim.log.levels.INFO)
+        lines[#lines + 1] = '  1. 未找到 GGUF 模型，请把模型放到：'
+        lines[#lines + 1] = '     ' .. default_model_path()
+        lines[#lines + 1] = '     或在 Trans.json 中设置 llm.model_path。下载方法见 README。'
     end
 
-    local server = M.find_server(backend.server_bin)
-    if server then
-        return true
-    end
-
-    local asset, kind = llama_asset()
-    if not asset then
-        notify('当前平台不支持自动安装 llama.cpp，请手动安装并设置 server_bin', vim.log.levels.ERROR)
-        return false
-    end
-
-    local dir = managed_dir()
-    vim.fn.mkdir(dir, 'p')
-    local archive = dir .. '/' .. asset
-    local url = ('https://github.com/ggml-org/llama.cpp/releases/download/%s/%s'):format(LLAMA_VERSION, asset)
-
-    notify('首次使用，正在下载 llama.cpp 运行时（约 20-50 MB）...', vim.log.levels.INFO)
-    vim.fn.delete(archive)
-
-    if not download(url, archive, false) then
-        notify('llama.cpp 下载失败: ' .. url, vim.log.levels.ERROR)
-        return false
-    end
-
-    local ok
-    if kind == 'zip' then
-        ok = run({ 'tar', '-xf', archive, '-C', dir }, 120000)
-        if not ok then
-            ok = run({
-                'powershell',
-                '-NoProfile',
-                '-Command',
-                ('Expand-Archive -Force -LiteralPath %q -DestinationPath %q'):format(archive, dir),
-            }, 120000)
-        end
-    else
-        ok = run({ 'tar', '-xzf', archive, '-C', dir }, 120000)
-    end
-
-    if not ok then
-        notify('llama.cpp 解压失败: ' .. archive, vim.log.levels.ERROR)
-        return false
-    end
-
-    server = M.find_server(nil)
     if not server then
-        notify('解压后未找到 llama-server，请检查: ' .. dir, vim.log.levels.ERROR)
-        return false
+        lines[#lines + 1] = '  2. 未找到 llama-server，请安装 llama.cpp 并放入 PATH，'
+        lines[#lines + 1] = '     ~/tools/llama/*/ 或 Trans.json 的 llm.server_bin。'
     end
 
-    pcall(uv.fs_chmod, server, 493) -- 0755
-    notify('llama.cpp 安装完成: ' .. server, vim.log.levels.INFO)
-    return true
+    notify(table.concat(lines, '\n'), vim.log.levels.ERROR)
 end
 
 ---Check the llama.cpp health endpoint.
@@ -445,21 +315,12 @@ function M.ensure_started(callback, opts)
             return
         end
 
-        if not M.install() then
-            state.starting = false
-            flush(true) -- still try baidu / youdao fallback
-            return
-        end
-
         local model = M.find_model(backend.model_path)
         local server = M.find_server(backend.server_bin)
         if not model or not server then
             state.starting = false
-            if not state.missing_notified then
-                state.missing_notified = true
-                notify('本地模型或 llama-server 未找到，请检查 Trans.json', vim.log.levels.ERROR)
-            end
-            flush(true)
+            notify_missing(model, server)
+            flush(true) -- still try baidu / youdao fallback
             return
         end
 
