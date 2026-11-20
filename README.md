@@ -32,6 +32,7 @@
 
 -   **首次使用自动启动**：模型和 llama.cpp 由用户自行下载；准备好后按翻译键即可，服务自动启动
 -   **本地大模型翻译**：默认使用 `Qwen2.5-0.5B-Instruct`，不需要联网
+-   **单词详情**：单个英文单词会额外显示读音（IPA）、词性和英文释义
 -   **OpenAI 兼容接口**：自动管理 llama.cpp，也支持 Ollama、LM Studio 等外部服务
 -   **中英互译**：英文单词 / 句子 → 中文，中文 → 英文
 -   **悬浮窗 UI**：沿用 Trans.nvim 的 hover 窗口、动画和自动发音
@@ -350,6 +351,10 @@ require('Trans').setup {
 | 有道 | `youdao` | 配置密钥后启用 | 备用 |
 
 翻译时会按 `llm` → `baidu` → `youdao` 的顺序尝试。
+
+单个英文单词会由大模型再回答一次轻量请求，补读音、词性和英文释义，
+显示在悬浮窗的 `TransWord`、`TransPhonetic`、`TransPos`、`TransDefinition` 等行。
+短语和句子只显示翻译，不会请求这些信息。
 
 ## 高亮组
 

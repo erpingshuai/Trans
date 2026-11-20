@@ -11,33 +11,42 @@ local M = {}
 
 function M.title(hover, result)
     local title = result.title
-    if not title then return end
+    if not title then
+        hover.buffer:setline(it { result.str, 'TransWord' })
+        return
+    end
     if type(title) == 'string' then
         hover.buffer:setline(it { title, 'TransWord' })
         return
     end
 
+    local icon  = hover.opts.icon
+    local nodes = { it { title.word or result.str, 'TransWord' } }
 
-    local icon     = hover.opts.icon
-
-    local word     = title.word
-    local oxford   = title.oxford
-    local collins  = title.collins
     local phonetic = title.phonetic
-
-    hover.buffer:setline(f {
-        it { word, 'TransWord' },
-        t {
+    if type(phonetic) == 'string' and phonetic ~= '' then
+        nodes[#nodes + 1] = t {
             it { '[' },
-            it { (phonetic and phonetic ~= '') and phonetic or icon.notfound, 'TransPhonetic' },
+            it { phonetic, 'TransPhonetic' },
             it { ']' },
-        },
+        }
+    end
 
-        it { collins and icon.star:rep(collins) or icon.notfound, 'TransCollins' },
-        it { oxford == 1 and icon.yes or icon.no },
+    -- Oxford / Collins levels only exist for the removed offline dictionary.
+    if title.collins then
+        nodes[#nodes + 1] = it { icon.star:rep(title.collins), 'TransCollins' }
+    end
+    if title.oxford then
+        nodes[#nodes + 1] = it { title.oxford == 1 and icon.yes or icon.no }
+    end
 
-        width = hover.opts.width,
-    })
+    if #nodes == 1 then
+        hover.buffer:setline(nodes[1])
+        return
+    end
+
+    nodes.width = hover.opts.width
+    hover.buffer:setline(f(nodes))
 end
 
 function M.tag(hover, result)

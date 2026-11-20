@@ -68,9 +68,10 @@ return {
             ---@type table<string, string[]> order to display translate result
             order             = {
                 default = {
-                    'str',
+                    'title',    -- word and IPA pronunciation
+                    'pos',      -- part of speech
                     'translation',
-                    'definition',
+                    'definition', -- English note
                 },
                 offline = {
                     'title',

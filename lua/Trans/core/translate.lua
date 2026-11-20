@@ -84,7 +84,20 @@ local strategy = {
             while result[name] == nil and update(backend) do
             end
 
-            if result[name] then return true end
+            if result[name] then
+                -- The LLM backend adds IPA, part of speech and an English note
+                -- for single English words with a second, lightweight request.
+                local enriched = false
+                if backend.enrich then
+                    backend.enrich(data, result[name], function()
+                        enriched = true
+                    end)
+
+                    while not enriched and update(backend) do
+                    end
+                end
+                return true
+            end
         end
 
         return false

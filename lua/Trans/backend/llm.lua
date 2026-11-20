@@ -8,6 +8,7 @@
 ---@field max_tokens? integer
 ---@field timeout? integer curl timeout in seconds
 ---@field system_prompt? string prompt template, supports {{from}} and {{to}}
+---@field dict_prompt? string prompt used to fetch IPA / POS / English definition
 ---@field auto_start? boolean start an already installed local llama.cpp server on first use (no downloads)
 ---@field model_path? string path to the GGUF file
 ---@field server_bin? string path to the llama-server binary
@@ -26,7 +27,7 @@ local M = {
     name         = 'llm',
     name_zh      = '大模型',
     method       = 'post',
-    -- First-use experience: download and start the local model automatically.
+    -- First-use experience: start the local service if model and binary exist.
     auto_start   = true,
     ctx          = 4096,
     threads      = 0,
@@ -71,7 +72,23 @@ local EXAMPLES = {
     },
 }
 
----Build system prompt for the current request
+---Small models are unreliable with JSON, but follow a fixed 3-line dictionary
+---format well. This is only used for single English words.
+local DEFAULT_DICT_PROMPT = table.concat({
+    'You are an English dictionary. For the word given by the user, output exactly',
+    'three lines and nothing else:',
+    'Line 1: IPA pronunciation in slashes',
+    'Line 2: part of speech only, such as adj. or n.',
+    'Line 3: one short English definition, at most 12 words',
+    'No labels, no numbering, no markdown.',
+    '',
+    'Example for "fragile":',
+    '/ˈfrædʒaɪl/',
+    'adj.',
+    'easily broken or damaged',
+}, '\n')
+
+---Build system prompt for the current translation request
 ---@param data TransData
 ---@return string
 local function build_prompt(data)
@@ -152,6 +169,115 @@ local function get_content(body)
 
     if type(content) == 'string' then
         return content
+    end
+end
+
+---Parse the 3-line dictionary response into its fields.
+---@param content string
+---@return { phonetic: string, pos: string, definition: string }?
+local function parse_dictionary(content)
+    local lines = {}
+    for line in content:gmatch('[^\n]+') do
+        line = line:gsub('^%s+', ''):gsub('%s+$', '')
+        if line ~= '' then
+            lines[#lines + 1] = line
+        end
+    end
+
+    -- Some small models merge the IPA and part-of-speech lines.
+    if lines[1] then
+        local ipa, pos = lines[1]:match('^(/[^\n]-/)[%s]+([%a]+%.)')
+        if ipa and pos then
+            lines[1] = ipa
+            table.insert(lines, 2, pos)
+        end
+    end
+
+    local phonetic, pos, definition = lines[1], lines[2], lines[3]
+    if not phonetic or not pos or not definition then
+        return
+    end
+    if not phonetic:match('^/.+/$') then
+        return
+    end
+    if not pos:match('^%a+%.?$') then
+        return
+    end
+    if not Trans.util.is_english(definition) then
+        return
+    end
+
+    return {
+        phonetic   = phonetic,
+        pos        = pos,
+        definition = definition,
+    }
+end
+
+---Fetch IPA / part of speech / English definition for a single English word
+---and merge them into the translation result.
+---@param data TransData
+---@param result TransResult
+---@param callback fun() called when enrichment finished (success or failure)
+function M.enrich(data, result, callback)
+    local finished = false
+    local function finish()
+        if finished then return end
+        finished = true
+        callback()
+    end
+
+    if data.from ~= 'en' or not data.is_word then
+        finish()
+        return
+    end
+
+    local body = {
+        model       = M.model,
+        messages    = {
+            {
+                role    = 'system',
+                content = M.dict_prompt or DEFAULT_DICT_PROMPT,
+            },
+            {
+                role    = 'user',
+                content = data.str,
+            },
+        },
+        temperature = 0,
+        max_tokens  = 120,
+        stream      = false,
+    }
+
+    local started = pcall(function()
+        Trans.curl.post(M.uri, {
+            body     = body,
+            header   = M.header(data),
+            timeout  = M.timeout,
+            callback = function(output)
+                local ok, response = pcall(vim.json.decode, output.body or '')
+                if ok and type(response) == 'table' then
+                    local content = get_content(response)
+                    if content then
+                        local dict = parse_dictionary(clean(content))
+                        if dict then
+                            result.title = {
+                                word     = data.str,
+                                phonetic = dict.phonetic,
+                            }
+                            local meaning = (result.translation and result.translation[1]) or data.str
+                            result.pos = { [dict.pos] = meaning }
+                            result.definition = { dict.definition }
+                        end
+                    end
+                end
+                finish()
+            end,
+        })
+    end)
+
+    if not started then
+        finish()
     end
 end
 

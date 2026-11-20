@@ -57,6 +57,15 @@ local default = {
 ---@diagnostic disable-next-line: assign-type-mismatch
 default.__index = default
 
+-- Fields that came from the removed offline dictionary are still useful for
+-- the LLM backend (word + IPA, part of speech, word forms).
+local offline = require 'Trans.frontend.hover.offline'
+for _, field in ipairs { 'title', 'tag', 'pos', 'exchange' } do
+    default[field] = function(hover, result)
+        offline[field](hover, result)
+    end
+end
+
 ---@type table<string, TransHoverRenderer>
 M.renderer = setmetatable({}, {
     __index = function(tbl, key)
