@@ -15,8 +15,8 @@
 -   [与原版 Trans.nvim 的区别](#与原版-transnvim-的区别)
 -   [依赖](#依赖)
 -   [安装](#安装)
--   [模型下载](#模型下载)
--   [启动本地服务](#启动本地服务)
+-   [模型下载](#模型下载-可选)
+-   [自动启动本地服务](#自动启动本地服务)
 -   [配置](#配置)
 -   [命令](#命令)
 -   [快捷键](#快捷键)
@@ -30,8 +30,9 @@
 
 ## 特点
 
+-   **开箱即用**：像 markdown-preview.nvim 一样，装上插件直接用；模型和服务在首次使用时自动下载并启动
 -   **本地大模型翻译**：默认使用 `Qwen2.5-0.5B-Instruct`，不需要联网
--   **OpenAI 兼容接口**：支持 llama.cpp、Ollama、LM Studio 等本地服务
+-   **OpenAI 兼容接口**：自动管理 llama.cpp，也支持 Ollama、LM Studio 等外部服务
 -   **中英互译**：英文单词 / 句子 → 中文，中文 → 英文
 -   **悬浮窗 UI**：沿用 Trans.nvim 的 hover 窗口、动画和自动发音
 -   **可选在线后端**：百度、有道 API 作为大模型失败后的备用
@@ -55,8 +56,9 @@
 
 -   Neovim 0.9+
 -   `curl`
--   一个本地大模型服务（推荐 [llama.cpp](https://github.com/ggml-org/llama.cpp)）
--   [Qwen2.5-0.5B-Instruct GGUF](https://modelscope.cn/models/Qwen/Qwen2.5-0.5B-Instruct-GGUF) 模型文件
+-   网络仅用于**首次使用**下载模型和 llama.cpp 运行时，之后完全离线
+    -   模型：[Qwen2.5-0.5B-Instruct GGUF](https://modelscope.cn/models/Qwen/Qwen2.5-0.5B-Instruct-GGUF)
+    -   运行时：[llama.cpp](https://github.com/ggml-org/llama.cpp) 预编译包
 -   可选：自动发音需要的系统 TTS 命令
     -   macOS：`say`
     -   Linux：`festival`
@@ -111,9 +113,10 @@ use {
 
 安装示例中的仓库地址为 `erpingshuai/Trans`，也可以换成你自己的 fork。
 
-## 模型下载
+## 模型下载（可选）
 
-模型文件**不包含在仓库中**，请自行下载。推荐使用 ModelScope（国内速度较快）：
+模型文件**不包含在仓库中**。插件会在首次翻译时自动下载到下面这个位置，通常不需要手动操作。
+如果想提前下载（例如网络环境较好时），可以运行脚本，推荐使用 ModelScope（国内速度较快）：
 
 ```bash
 ./scripts/download-model.sh
@@ -144,40 +147,35 @@ use {
 
 > 模型文件已被 `.gitignore` 忽略（`*.gguf`），不会误提交到仓库。
 
-## 启动本地服务
+## 自动启动本地服务
 
-### llama.cpp
+插件在第一次执行 `:Translate` / `:TranslateInput` 时会自动完成：
 
-先安装 llama.cpp，任选一种：
+1. 检查 `http://127.0.0.1:18080/health`，已经在运行就直接复用；
+2. 没有模型时，下载 `qwen2.5-0.5b-instruct-q4_k_m.gguf`（约 469 MB）；
+3. 本机没有 `llama-server` 时，下载对应平台的 llama.cpp 预编译包；
+4. 后台启动服务，健康检查通过后再发送翻译请求。
+
+所以**不需要手动启动服务**：装上插件 → 按翻译快捷键 → 直接用。
+下载与启动期间会显示 `Trans:` 通知，运行日志在 `~/.cache/nvim/Trans-llm.log`。
+之后 Neovim 重启也无需再管：服务在后台持续运行，下次翻译会直接复用。
+
+### 手动准备（可选）
+
+提前下载模型：
 
 ```bash
-sudo port install llama.cpp   # macOS + MacPorts
-brew install llama.cpp        # macOS + Homebrew
+./scripts/download-model.sh
 ```
 
-也可以直接下载官方预编译包（不需要包管理器）：
-
-```bash
-# Apple Silicon 用 macos-arm64，Intel 用 macos-x64
-mkdir -p ~/tools/llama && cd ~/tools/llama
-curl -L -o llama.tar.gz \
-  https://github.com/ggml-org/llama.cpp/releases/latest/download/llama-b12559-bin-macos-x64.tar.gz
-tar xzf llama.tar.gz
-```
-
-> 预编译包的具体文件名会随版本变化，请到
-> <https://github.com/ggml-org/llama.cpp/releases> 查看最新版本。
-
-然后启动：
+提前启动服务：
 
 ```bash
 ./scripts/start-llm.sh
 ```
 
 脚本会依次查找 `$LLAMA_SERVER`、`PATH` 中的 `llama-server`，以及
-`~/tools/llama/*/llama-server`。
-
-或者手动启动：
+`~/tools/llama/*/llama-server`。也可以手动运行：
 
 ```bash
 llama-server \
@@ -185,29 +183,28 @@ llama-server \
   --host 127.0.0.1 --port 18080 -c 4096
 ```
 
-默认接口：
+默认接口（插件自动管理的 llama.cpp 服务使用 **18080** 端口）：
 
 ```text
 http://127.0.0.1:18080/v1/chat/completions
 ```
 
-### Ollama
+### 使用外部服务
 
-```bash
-ollama pull qwen2.5:0.5b-instruct
-ollama serve
-```
-
-然后在 `Trans.json` 中使用：
+如果你已经用 Ollama、LM Studio 或其他机器提供了 OpenAI 兼容接口，把
+`auto_start` 设为 `false`，`uri` 指向该服务即可。插件不会管理外部服务的生命周期：
 
 ```json
 {
   "llm": {
+    "auto_start": false,
     "uri": "http://127.0.0.1:11434/v1/chat/completions",
     "model": "qwen2.5:0.5b-instruct"
   }
 }
 ```
+
+上面 `11434` 是 Ollama 自身的默认端口；插件自动管理的 llama.cpp 服务固定使用 `18080`。
 
 ## 配置
 
@@ -217,13 +214,15 @@ ollama serve
 cp Trans.json.example Trans.json
 ```
 
-最小配置：
+不写 `Trans.json` 也能直接用：插件内置了本地 Qwen2.5 的默认配置。
+需要修改时才创建配置文件，最小配置：
 
 ```json
 {
   "llm": {
     "uri": "http://127.0.0.1:18080/v1/chat/completions",
     "model": "qwen2.5-0.5b-instruct",
+    "auto_start": true,
     "temperature": 0,
     "max_tokens": 256,
     "timeout": 60
@@ -242,6 +241,13 @@ cp Trans.json.example Trans.json
 | `timeout` | `60` | curl 超时（秒） |
 | `api_key` | 无 | 需要鉴权的接口才填写 |
 | `system_prompt` | 内置翻译提示词 | 支持 `{{from}}` / `{{to}}` 占位符 |
+| `auto_start` | `true` | 首次使用时自动下载并启动本地 llama.cpp；用外部服务时设为 `false` |
+| `model_path` | `~/models/qwen2.5-0.5b-instruct/qwen2.5-0.5b-instruct-q4_k_m.gguf` | GGUF 模型路径 |
+| `server_bin` | 自动查找 | `llama-server` 可执行文件路径 |
+| `ctx` | `4096` | llama.cpp 上下文长度 |
+| `threads` | `0`（自动） | llama.cpp 线程数 |
+| `log_path` | `~/.cache/nvim/Trans-llm.log` | 服务日志路径 |
+| `start_timeout` | `120` | 等待服务启动的秒数 |
 | `disable` | `false` | 设为 `true` 可禁用该后端 |
 
 ### 百度 / 有道
@@ -350,13 +356,15 @@ require('Trans').setup {
 :checkhealth Trans
 ```
 
-会检查 Neovim 版本、`curl`、`Trans.json` 以及当前 LLM 接口配置。
+会检查 Neovim 版本、`curl`、`Trans.json`、LLM 接口配置，以及模型文件、
+`llama-server` 和服务运行状态。
 
 ## 常见问题
 
 **翻译超时 / 无法连接本地模型**
 
-确认本地服务已经启动，并且 `Trans.json` 中的 `uri` 与启动地址一致：
+先看 `:checkhealth Trans` 里的服务状态。正常情况下服务会在首次翻译时自动启动；
+如果用了外部服务，请确认它已运行，并且 `Trans.json` 中的 `uri` 与地址一致：
 
 ```bash
 curl http://127.0.0.1:18080/v1/models
@@ -372,7 +380,9 @@ curl http://127.0.0.1:18080/v1/models
 
 **第一次翻译比较慢**
 
-本地模型首次加载需要时间。可以提前启动服务，或者把 `frontend.hover.timeout` 调大。
+首次使用会先下载模型和运行时（约 500 MB）并加载模型，所以需要等待一会；
+之后都是秒级响应。可以提前运行 `scripts/download-model.sh` 和 `scripts/start-llm.sh`，
+或者把 `frontend.hover.timeout` 调大。
 
 **模型文件太大，不想提交到 Git**
 

@@ -8,6 +8,13 @@
 ---@field max_tokens? integer
 ---@field timeout? integer curl timeout in seconds
 ---@field system_prompt? string prompt template, supports {{from}} and {{to}}
+---@field auto_start? boolean download/start the local llama.cpp server on first use
+---@field model_path? string path to the GGUF file
+---@field server_bin? string path to the llama-server binary
+---@field ctx? integer llama.cpp context size
+---@field threads? integer llama.cpp threads (0 = auto)
+---@field log_path? string llama.cpp log file
+---@field start_timeout? integer seconds to wait for the server to become healthy
 ---@field disable? boolean
 local M = {
     uri          = 'http://127.0.0.1:18080/v1/chat/completions',
@@ -19,6 +26,11 @@ local M = {
     name         = 'llm',
     name_zh      = '大模型',
     method       = 'post',
+    -- First-use experience: download and start the local model automatically.
+    auto_start   = true,
+    ctx          = 4096,
+    threads      = 0,
+    start_timeout = 120,
 }
 
 local Trans = require 'Trans'

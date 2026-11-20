@@ -34,6 +34,7 @@ Trans.nvim 是一个基于本地大模型的 Neovim 翻译插件。
 ==============================================================================
 3. 配置                                                      *Trans-config*
 
+不写配置文件也能直接用，插件内置了本地 Qwen2.5 的默认配置。
 配置文件默认位于插件目录下的 `Trans.json`，也可以通过 setup 修改目录： >
     require('Trans').setup {
         dir = require('Trans').plugin_dir,
@@ -45,12 +46,15 @@ Trans.nvim 是一个基于本地大模型的 Neovim 翻译插件。
       "llm": {
         "uri": "http://127.0.0.1:18080/v1/chat/completions",
         "model": "qwen2.5-0.5b-instruct",
+        "auto_start": true,
         "temperature": 0,
         "max_tokens": 256,
         "timeout": 60
       }
     }
 <
+本地服务相关字段：`auto_start`（默认 true）、`model_path`、`server_bin`、
+`ctx`、`threads`、`log_path`、`start_timeout`。详见 README。
 百度 / 有道配置了 `app_id` 和 `app_passwd` 后才会启用： >
     {
       "baidu": {
@@ -68,23 +72,36 @@ Trans.nvim 是一个基于本地大模型的 Neovim 翻译插件。
 ==============================================================================
 4. 模型与服务                                                *Trans-model*
 
-模型文件不包含在仓库中。下载脚本： >
+装好插件后不需要手动下载模型或启动服务。第一次执行 :Translate 时，插件会
+检查 127.0.0.1:18080 的健康接口；必要时自动下载 GGUF 模型和 llama.cpp
+预编译包，后台启动服务，等健康检查通过后再翻译。日志在
+~/.cache/nvim/Trans-llm.log，进度可用 :checkhealth Trans 查看。
+
+想提前准备，也可以手动下载： >
     ./scripts/download-model.sh
 <
 默认下载到： >
     ~/models/qwen2.5-0.5b-instruct/qwen2.5-0.5b-instruct-q4_k_m.gguf
 <
-启动 llama.cpp 服务： >
+并手动启动： >
     ./scripts/start-llm.sh
 <
-或手动启动： >
+或： >
     llama-server \
       -m ~/models/qwen2.5-0.5b-instruct/qwen2.5-0.5b-instruct-q4_k_m.gguf \
       --host 127.0.0.1 --port 18080 -c 4096
 <
-使用 Ollama 时，接口改为
-`http://127.0.0.1:11434/v1/chat/completions`，
-模型名改为 `qwen2.5:0.5b-instruct`。
+使用 Ollama、LM Studio 或远程的 OpenAI 兼容接口时，在 Trans.json 中设置
+"auto_start": false，uri 指向对应地址。插件不会管理这类外部服务。
+例如 Ollama（11434 是 Ollama 自己的端口）： >
+    {
+      "llm": {
+        "auto_start": false,
+        "uri": "http://127.0.0.1:11434/v1/chat/completions",
+        "model": "qwen2.5:0.5b-instruct"
+      }
+    }
+<
 
 ==============================================================================
 5. 性能与效果                                                *Trans-perf*

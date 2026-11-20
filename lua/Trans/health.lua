@@ -44,6 +44,29 @@ local function check_llm()
 
     if not backend.uri or backend.uri == '' then
         error 'LLM endpoint is empty, please configure Trans.json'
+        return
+    end
+
+    local status = Trans.server.status()
+    if status.running then
+        ok 'Local LLM service is running'
+    elseif backend.auto_start == false then
+        warn 'Local LLM service is not running (auto_start = false; external service expected)'
+    else
+        warn('Local LLM service is not running yet; it will start automatically on first :Translate. '
+            .. 'Log: ' .. tostring(status.log))
+    end
+
+    if status.model then
+        ok(string.format('GGUF model: %s', status.model))
+    else
+        warn('GGUF model not found; it will be downloaded on first :Translate')
+    end
+
+    if status.server then
+        ok(string.format('llama-server: %s', status.server))
+    else
+        warn('llama-server not found; it will be downloaded on first :Translate')
     end
 end
 

@@ -95,7 +95,6 @@ local strategy = {
 
 -- HACK : Core process logic
 local function process(opts)
-    opts = init_opts(opts)
     local str = opts.str
     if not str or str == '' then return end
 
@@ -120,5 +119,15 @@ end
 ---@class Trans
 ---@field translate fun(opts: { frontend: string?, mode: string?}?) Translate string core function
 return function(opts)
-    coroutine.wrap(process)(opts)
+    -- Capture the word/selection now: visual mode is gone by the time an
+    -- asynchronous server start finishes.
+    opts = init_opts(opts)
+    if not opts.str or opts.str == '' then
+        return
+    end
+
+    -- Like markdown-preview.nvim, the backend is prepared on first use.
+    Trans.server.ensure_started(function()
+        coroutine.wrap(process)(opts)
+    end)
 end
