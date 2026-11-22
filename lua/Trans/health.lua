@@ -73,8 +73,10 @@ local function check_llm()
 
         if status.server then
             ok(string.format('llama-server: %s', status.server))
+        elseif backend.auto_download ~= false then
+            warn('llama-server not installed yet; it will be downloaded automatically on first :Translate')
         else
-            warn('llama-server not found; install llama.cpp or set llm.server_bin (see README)')
+            warn('llama-server not found and auto_download is disabled; install llama.cpp or set llm.server_bin')
         end
     end
 end

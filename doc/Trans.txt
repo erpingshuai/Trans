@@ -35,58 +35,75 @@ Trans.nvim 是一个基于本地大模型的 Neovim 翻译插件。
 3. 配置                                                      *Trans-config*
 
 不写配置文件也能直接用，插件内置了本地 Qwen2.5 的默认配置。
-配置文件默认位于插件目录下的 `Trans.json`，也可以通过 setup 修改目录： >
+配置文件默认位于插件目录下的 `Trans.json`；如果 setup 里设置了 dir，则放在
+该目录。本仓库的 Neovim 配置使用 stdpath('config')，即
+stdpath('config')/Trans.json（Linux 下为 ~/.config/nvim/Trans.json）： >
     require('Trans').setup {
-        dir = require('Trans').plugin_dir,
+        dir = vim.fn.stdpath('config'),
         theme = 'default', -- default | tokyonight | dracula
     }
 <
-最小配置： >
+最小配置（model_path 按实际模型文件修改）： >
     {
       "llm": {
-        "uri": "http://127.0.0.1:18080/v1/chat/completions",
+        "uri": "http://127.0.0.1:42317/v1/chat/completions",
         "model": "qwen2.5-0.5b-instruct",
         "auto_start": true,
+        "auto_download": true,
+        "model_path": "~/models/qwen2.5-0.5b-instruct-q3_k_m.gguf",
         "temperature": 0,
         "max_tokens": 256,
         "timeout": 60
       }
     }
 <
-本地服务相关字段：`auto_start`（默认 true）、`model_path`、`server_bin`、
-`ctx`、`threads`、`log_path`、`start_timeout`。详见 README。
-百度 / 有道配置了 `app_id` 和 `app_passwd` 后才会启用： >
+本地服务相关字段：`auto_start`（默认 true）、`auto_download`（默认 true）、
+`model_path`、`server_bin`、`server_url`、`ctx`、`threads`、`log_path`、
+`start_timeout`。详见 README。
+百度 / 有道在配置了 `app_id`、`app_passwd`，并且 `disable` 不是 true 时才会启用： >
     {
       "baidu": {
         "app_id": "你的百度 app_id",
-        "app_passwd": "你的百度密钥"
+        "app_passwd": "你的百度密钥",
+        "disable": false
       },
       "youdao": {
         "app_id": "你的有道 app_id",
-        "app_passwd": "你的有道密钥"
+        "app_passwd": "你的有道密钥",
+        "disable": false
       }
     }
 <
-完整配置见 `lua/Trans/core/conf.lua`。
+完整配置见 `Trans.json.example`；插件 setup 配置见 `lua/Trans/core/conf.lua`。
 
 ==============================================================================
 4. 模型与服务                                                *Trans-model*
 
-插件不会下载任何文件，请自行下载模型并安装 llama.cpp。准备好之后，第一次
-执行 :Translate 时会检查 127.0.0.1:18080 的健康接口；没运行就用找到的模型和
-llama-server 在后台启动，等健康检查通过后再翻译。日志在
-~/.cache/nvim/Trans-llm.log，状态可用 :checkhealth Trans 查看。
+插件不会下载模型，请自行下载 GGUF 模型。打开 Neovim 时不会启动后台服务；
+第一次执行 :Translate 时才会检查模型和 llama-server。模型存在时，缺失的
+llama-server 会自动下载到 ~/.local/share/nvim/Trans/llama/ 并后台启动。插件先检查
+127.0.0.1:42317 的健康接口，没运行就启动服务，健康检查通过后再翻译。
+日志在 ~/.cache/nvim/Trans-llm.log，状态可用 :checkhealth Trans 查看。
 
-模型默认位置： >
+翻译时按 llm -> baidu -> youdao 的顺序尝试。大模型服务连接失败、返回错误或
+返回内容无法解析时，会自动切换到已启用的百度 / 有道后端。百度 / 有道需要
+填入 app_id、app_passwd，并把 disable 设为 false 才会启用；全部后端都失败时
+显示失败提示。
+
+插件内置的模型默认位置（q4_k_m）： >
     ~/models/qwen2.5-0.5b-instruct/qwen2.5-0.5b-instruct-q4_k_m.gguf
 <
-放到其他位置时，在 Trans.json 中指定 `model_path`： >
-    { "llm": { "model_path": "/你的目录/qwen2.5-0.5b-instruct-q4_k_m.gguf" } }
+Trans.json.example 使用的是 q3_k_m： >
+    ~/models/qwen2.5-0.5b-instruct-q3_k_m.gguf
+<
+用哪个量化版本都可以，在 Trans.json 中用 `model_path` 指向实际文件： >
+    { "llm": { "model_path": "~/models/qwen2.5-0.5b-instruct-q3_k_m.gguf" } }
 <
 把模型放好（默认路径或用 model_path 指定）后，不需要其他操作，按翻译键即可使用。
-`llama-server` 会在 PATH、~/.local/share/nvim/Trans/llama/llama-b12559/、
-~/tools/llama/*/ 中查找，也可用 `server_bin` 直接指定。缺少任一文件时不会
-自动启动，只会提示存放位置。
+`llama-server` 的查找顺序是：`server_bin` → 插件自动下载的
+~/.local/share/nvim/Trans/llama/llama-b12559/ → PATH → ~/tools/llama/*/。
+都找不到时自动下载。也可用 `server_bin` 直接指定，或用 `auto_download: false`
+关闭自动下载。模型缺失时不会自动下载，只会提示存放位置。
 
 下载模型： >
     ./scripts/download-model.sh
@@ -94,13 +111,13 @@ llama-server 在后台启动，等健康检查通过后再翻译。日志在
 默认下载到： >
     ~/models/qwen2.5-0.5b-instruct/qwen2.5-0.5b-instruct-q4_k_m.gguf
 <
-并手动启动： >
+如需手动启动（通常不需要）： >
     ./scripts/start-llm.sh
 <
 或： >
     llama-server \
       -m ~/models/qwen2.5-0.5b-instruct/qwen2.5-0.5b-instruct-q4_k_m.gguf \
-      --host 127.0.0.1 --port 18080 -c 4096
+      --host 127.0.0.1 --port 42317 -c 4096
 <
 使用 Ollama、LM Studio 或远程的 OpenAI 兼容接口时，在 Trans.json 中设置
 "auto_start": false，uri 指向对应地址。插件不会管理这类外部服务。
@@ -117,7 +134,7 @@ llama-server 在后台启动，等健康检查通过后再翻译。日志在
 ==============================================================================
 5. 性能与效果                                                *Trans-perf*
 
-测试环境：Intel i7-9750H，6 线程 CPU 推理，Q4_K_M 量化。
+测试环境：Intel i7-9750H，6 线程 CPU 推理，Q4_K_M 量化（Q3_K_M 速度接近）。
 
     单词 / 短语                 约 0.1 秒
     整句                        约 0.3 ~ 0.5 秒

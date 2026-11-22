@@ -9,7 +9,9 @@
 ---@field timeout? integer curl timeout in seconds
 ---@field system_prompt? string prompt template, supports {{from}} and {{to}}
 ---@field dict_prompt? string prompt used to fetch IPA / POS / English definition
----@field auto_start? boolean start an already installed local llama.cpp server on first use (no downloads)
+---@field auto_start? boolean start a local llama.cpp server on first use
+---@field auto_download? boolean download llama.cpp when llama-server is missing
+---@field server_url? string override the llama.cpp release download URL
 ---@field model_path? string path to the GGUF file
 ---@field server_bin? string path to the llama-server binary
 ---@field ctx? integer llama.cpp context size
@@ -18,7 +20,8 @@
 ---@field start_timeout? integer seconds to wait for the server to become healthy
 ---@field disable? boolean
 local M = {
-    uri          = 'http://127.0.0.1:18080/v1/chat/completions',
+    -- Use an uncommon local port to avoid clashing with common dev services.
+    uri          = 'http://127.0.0.1:42317/v1/chat/completions',
     model        = 'qwen2.5-0.5b-instruct',
     -- 0 keeps small models deterministic and avoids half-translated output
     temperature  = 0,
@@ -27,10 +30,12 @@ local M = {
     name         = 'llm',
     name_zh      = '大模型',
     method       = 'post',
-    -- First-use experience: start the local service if model and binary exist.
-    auto_start   = true,
-    ctx          = 4096,
-    threads      = 0,
+    -- First-use experience: download llama-server and start it automatically.
+    -- The GGUF model is always provided by the user.
+    auto_start    = true,
+    auto_download = true,
+    ctx           = 4096,
+    threads       = 0,
     start_timeout = 120,
 }
 
