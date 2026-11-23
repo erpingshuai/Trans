@@ -122,7 +122,7 @@ lazy.nvim 管理的插件通常是：
 
 ```bash
 curl -L --fail --retry 5 --retry-delay 3 -C - \
-  -o ~/Trans/qwen2.5-0.5b-instruct-q4_k_m.gguf \
+  -o ~/.local/share/nvim/lazy/Trans/qwen2.5-0.5b-instruct-q4_k_m.gguf \
   https://modelscope.cn/models/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/master/qwen2.5-0.5b-instruct-q4_k_m.gguf
 ```
 
@@ -183,7 +183,7 @@ curl -L --fail --retry 5 --retry-delay 3 -C - \
 把仓库里的 `Trans.json.example` 复制为 `Trans.json`。默认放在插件目录（`require("Trans").plugin_dir`）；如果 `setup({ dir = "..." })` 或 Lazy 的 `opts.dir` 设置了其他目录，则放在该目录。下面的例子使用 `stdpath("config")`，Linux 下实际文件是 `~/.config/nvim/Trans.json`。
 
 ```bash
-cp ~/Trans/Trans.json.example ~/.config/nvim/Trans.json
+cp ~/.local/share/nvim/lazy/Trans/Trans.json.example ~/.config/nvim/Trans.json
 ```
 
 **不写 `Trans.json` 也能直接用**，插件有内置默认配置。
