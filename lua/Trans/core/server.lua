@@ -1,8 +1,8 @@
 ---Auto-start the local OpenAI-compatible llama.cpp server.
 ---
----This module never downloads anything. The user downloads the GGUF model and
----installs llama.cpp themselves (see README). On first use Trans only checks
----that both already exist, and if so starts the service in the background.
+---The llama-server binary and the GGUF model can both be downloaded on first use.
+---Downloads are enabled by default and can be disabled with `auto_download` and
+---`auto_download_model` in Trans.json / opts.llm.
 local Trans = require 'Trans'
 
 local M = {}
@@ -10,15 +10,20 @@ local M = {}
 local uv = vim.uv or vim.loop
 
 local LLAMA_VERSION = 'b12559'
-local MODEL_FILE = 'qwen2.5-0.5b-instruct-q4_k_m.gguf'
+local DEFAULT_MODEL_DIR = '~/models/qwen2.5-0.5b-instruct'
+local DEFAULT_MODEL_FILE = 'qwen2.5-0.5b-instruct-q4_k_m.gguf'
+local MODEL_BASE_URL = 'https://modelscope.cn/models/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/master/'
 local RELEASE_BASE = 'https://github.com/ggml-org/llama.cpp/releases/download'
 local DOWNLOAD_MIN_SIZE = 1024 * 1024 -- ignore truncated archives
+local MODEL_MIN_SIZE = 10 * 1024 * 1024 -- ignore truncated GGUF downloads
 
 local state = {
     starting  = false,
     ready     = false,
     callbacks = {},
     missing_notified = false,
+    downloading_model = false,
+    model_callbacks = {},
 }
 
 ---@param message string
@@ -49,9 +54,75 @@ local function expand(path)
     return vim.fn.expand(path)
 end
 
+---Directory used for the GGUF model (supports `~` and environment variables).
+---An explicitly configured model_dir always wins. Otherwise automatically
+---downloaded models live directly in the plugin directory (no extra subfolder).
+---@param backend table?
 ---@return string
-local function default_model_path()
-    return vim.fn.expand('~/models/qwen2.5-0.5b-instruct/' .. MODEL_FILE)
+local function model_dir(backend)
+    local configured = expand(backend and backend.model_dir)
+    if configured then
+        return configured
+    end
+
+    if backend and backend.auto_download_model ~= false then
+        return Trans.plugin_dir
+    end
+
+    return vim.fn.expand(DEFAULT_MODEL_DIR)
+end
+
+---GGUF file name inside model_dir.
+---@param backend table?
+---@return string
+local function model_file(backend)
+    local file = backend and backend.model_file
+    if type(file) == 'string' and file ~= '' then
+        return vim.fn.fnamemodify(file, ':t')
+    end
+    return DEFAULT_MODEL_FILE
+end
+
+---Default location: model_dir/model_file.
+---@param backend table?
+---@return string
+local function default_model_path(backend)
+    return model_dir(backend) .. '/' .. model_file(backend)
+end
+
+---Where a downloaded model should be written. An explicit model_path wins.
+---@param backend table
+---@return string
+function M.model_target(backend)
+    return expand(backend.model_path) or default_model_path(backend)
+end
+
+---Download URL for the configured model. Any Qwen2.5 GGUF filename works.
+---@param backend table
+---@return string
+function M.model_url(backend)
+    if type(backend.model_url) == 'string' and backend.model_url ~= '' then
+        return backend.model_url
+    end
+    return MODEL_BASE_URL .. vim.fn.fnamemodify(M.model_target(backend), ':t')
+end
+
+---Whether an online backend (baidu/youdao) is configured as a fallback.
+---@return boolean
+local function has_online_fallback()
+    for _, name in ipairs(Trans.backend.all_name) do
+        if name ~= 'llm' then
+            return true
+        end
+    end
+    return false
+end
+
+---Report local-model problems as info when an online fallback exists.
+---@param message string
+local function notify_local_failure(message)
+    local level = has_online_fallback() and vim.log.levels.INFO or vim.log.levels.ERROR
+    notify(message, level)
 end
 
 ---@return string
@@ -81,8 +152,6 @@ local function managed_server()
 end
 
 ---Map the current OS/architecture to an official llama.cpp release asset.
----Only the server binary is downloaded; the GGUF model is always provided by
----the user.
 ---@return string? asset
 ---@return string? ext
 local function platform_asset()
@@ -181,27 +250,31 @@ function M.find_server(configured)
 end
 
 ---Find the GGUF model file. No downloads are performed here.
+---Priority: explicit model_path > model_dir/model_file > old default > data dir.
 ---@param configured string?
+---@param backend table?
 ---@return string?
-function M.find_model(configured)
-    local path = expand(configured)
-    if path and vim.fn.filereadable(path) == 1 then
-        return path
-    end
+function M.find_model(configured, backend)
+    backend = backend or {}
 
-    local default = default_model_path()
-    if vim.fn.filereadable(default) == 1 then
-        return default
+    local candidates = {}
+    local explicit = expand(configured) or expand(backend.model_path)
+    if explicit then
+        candidates[#candidates + 1] = explicit
     end
+    candidates[#candidates + 1] = default_model_path(backend)
+    -- Backwards compatibility with the old ~/models layout.
+    candidates[#candidates + 1] = vim.fn.expand(DEFAULT_MODEL_DIR) .. '/' .. model_file(backend)
+    candidates[#candidates + 1] = vim.fn.stdpath 'data' .. '/Trans/models/' .. model_file(backend)
 
-    local managed = vim.fn.stdpath 'data' .. '/Trans/models/' .. MODEL_FILE
-    if vim.fn.filereadable(managed) == 1 then
-        return managed
+    for _, path in ipairs(candidates) do
+        if vim.fn.filereadable(path) == 1 and vim.fn.getfsize(path) > 0 then
+            return path
+        end
     end
 end
 
 ---Download and unpack the official llama.cpp release for this platform.
----The GGUF model is deliberately not downloaded.
 ---@param backend table
 ---@param callback fun(ok: boolean, err: string?)
 local function download_server(backend, callback)
@@ -296,10 +369,230 @@ local function download_server(backend, callback)
     end
 end
 
+---Run a command synchronously and return whether it succeeded.
+---@param cmd string[]
+---@return boolean
+local function run_sync(cmd)
+    vim.fn.system(cmd)
+    return vim.v.shell_error == 0
+end
+
+---Download and unpack llama-server synchronously (used by install / LI build).
+---@param backend table
+---@return string? server
+---@return string? err
+function M.install_server_sync(backend)
+    local server = M.find_server(backend.server_bin)
+    if server then
+        return server
+    end
+
+    if backend.auto_download == false then
+        return nil, 'auto_download = false，且没有找到 llama-server'
+    end
+
+    local asset, ext = platform_asset()
+    if not asset then
+        return nil, '当前系统/架构没有可用的 llama.cpp 预编译包，请手动设置 llm.server_bin'
+    end
+
+    local url = backend.server_url
+        or ('%s/%s/%s'):format(RELEASE_BASE, LLAMA_VERSION, asset)
+    local dir = managed_root()
+    local archive = vim.fn.stdpath 'cache' .. '/Trans/llama-' .. LLAMA_VERSION .. ext
+
+    vim.fn.mkdir(dir, 'p')
+    vim.fn.mkdir(vim.fn.fnamemodify(archive, ':h'), 'p')
+
+    local size = vim.fn.getfsize(archive)
+    if not (size and size >= DOWNLOAD_MIN_SIZE) then
+        notify(('首次使用，正在下载 llama-server %s（约 22MB）...'):format(LLAMA_VERSION), vim.log.levels.INFO)
+        if not run_sync({
+            'curl', '-fL',
+            '--retry', '3',
+            '--retry-delay', '2',
+            '--connect-timeout', '15',
+            '-o', archive,
+            url,
+        }) then
+            pcall(vim.fn.delete, archive)
+            return nil, ('下载 llama-server 失败 (curl exit %d)\n%s'):format(vim.v.shell_error, url)
+        end
+    end
+
+    notify('正在解压 llama-server...', vim.log.levels.INFO)
+    local cmd
+    if ext == '.zip' then
+        if Trans.system == 'win' then
+            cmd = { 'tar', '-xf', archive, '-C', dir }
+        else
+            cmd = { 'unzip', '-q', '-o', archive, '-d', dir }
+        end
+    else
+        cmd = { 'tar', '-xzf', archive, '-C', dir }
+    end
+
+    if not run_sync(cmd) then
+        pcall(vim.fn.delete, archive)
+        return nil, ('解压 llama-server 失败 (exit %d)'):format(vim.v.shell_error)
+    end
+
+    local installed = managed_server()
+    if not installed then
+        pcall(vim.fn.delete, archive)
+        return nil, 'llama-server 解压完成，但没有找到可执行文件'
+    end
+
+    notify('llama-server 已安装: ' .. installed, vim.log.levels.INFO)
+    return installed
+end
+
+---Download the GGUF model synchronously (used by install / Lazy build).
+---@param backend table
+---@return string? model
+---@return string? err
+function M.download_model_sync(backend)
+    local existing = M.find_model(backend.model_path, backend)
+    if existing then
+        return existing
+    end
+
+    if backend.auto_download_model == false then
+        return nil, 'auto_download_model = false，且没有找到 GGUF 模型'
+    end
+
+    local target = M.model_target(backend)
+    local part = target .. '.part'
+    vim.fn.mkdir(vim.fn.fnamemodify(target, ':h'), 'p')
+
+    notify(('首次使用，正在下载模型 %s（约 300~400MB，请稍候）...')
+        :format(vim.fn.fnamemodify(target, ':t')), vim.log.levels.INFO)
+
+    local ok = run_sync({
+        'curl', '-fL',
+        '--retry', '3',
+        '--retry-delay', '2',
+        '--connect-timeout', '15',
+        '-C', '-',
+        '-o', part,
+        M.model_url(backend),
+    })
+
+    if not ok then
+        return nil, ('下载模型失败 (curl exit %d)\n%s\n已保留断点文件: %s')
+            :format(vim.v.shell_error, M.model_url(backend), part)
+    end
+
+    local size = vim.fn.getfsize(part)
+    if not size or size < MODEL_MIN_SIZE then
+        return nil, ('模型文件不完整: %s\n可重新执行 :TransInstall 断点续传'):format(part)
+    end
+
+    local renamed, err = uv.fs_rename(part, target)
+    if not renamed then
+        return nil, ('保存模型失败: %s'):format(tostring(err))
+    end
+
+    notify('模型下载完成: ' .. target, vim.log.levels.INFO)
+    return target
+end
+
+---Run queued model-download callbacks.
+---@param ok boolean
+---@param result string?
+local function flush_model(ok, result)
+    local callbacks = state.model_callbacks
+    state.model_callbacks = {}
+    for _, callback in ipairs(callbacks) do
+        local called, err = pcall(callback, ok, result)
+        if not called then
+            notify('内部错误: ' .. tostring(err), vim.log.levels.ERROR)
+        end
+    end
+end
+
+---Ensure the GGUF model exists, downloading it in the background if needed.
+---@param backend table
+---@param callback fun(ok: boolean, model: string?)
+function M.ensure_model(backend, callback)
+    state.model_callbacks[#state.model_callbacks + 1] = callback
+
+    local model = M.find_model(backend.model_path, backend)
+    if model then
+        flush_model(true, model)
+        return
+    end
+
+    if backend.auto_download_model == false then
+        flush_model(false, nil)
+        return
+    end
+
+    if state.downloading_model then
+        return
+    end
+    state.downloading_model = true
+
+    local target = M.model_target(backend)
+    local part = target .. '.part'
+    vim.fn.mkdir(vim.fn.fnamemodify(target, ':h'), 'p')
+
+    notify(('首次使用，正在下载模型 %s（约 300~400MB，请稍候）...')
+        :format(vim.fn.fnamemodify(target, ':t')), vim.log.levels.INFO)
+
+    local job = vim.fn.jobstart({
+        'curl', '-fL',
+        '--retry', '3',
+        '--retry-delay', '2',
+        '--connect-timeout', '15',
+        '-C', '-',
+        '-o', part,
+        M.model_url(backend),
+    }, {
+        stdout = '',
+        stderr = '',
+        on_exit = function(_, code)
+            state.downloading_model = false
+
+            if code ~= 0 then
+                flush_model(false, nil)
+                notify(('下载模型失败 (curl exit %d)，将使用在线翻译。\n%s\n已保留断点文件: %s')
+                    :format(code, M.model_url(backend), part),
+                    has_online_fallback() and vim.log.levels.WARN or vim.log.levels.ERROR)
+                return
+            end
+
+            local size = vim.fn.getfsize(part)
+            if not size or size < MODEL_MIN_SIZE then
+                flush_model(false, nil)
+                notify('模型文件不完整，可重新执行 :TransInstall 断点续传', vim.log.levels.ERROR)
+                return
+            end
+
+            local renamed, err = uv.fs_rename(part, target)
+            if not renamed then
+                flush_model(false, nil)
+                notify('保存模型失败: ' .. tostring(err), vim.log.levels.ERROR)
+                return
+            end
+
+            notify('模型下载完成: ' .. target, vim.log.levels.INFO)
+            flush_model(true, target)
+        end,
+    })
+
+    if job <= 0 then
+        state.downloading_model = false
+        flush_model(false, nil)
+        notify('无法启动 curl，请确认已安装 curl', vim.log.levels.ERROR)
+    end
+end
+
 ---Explain what the user must provide when a local service cannot be started.
+---@param backend table
 ---@param model string?
 ---@param server string?
-local function notify_missing(model, server)
+local function notify_missing(backend, model, server)
     if state.missing_notified then
         return
     end
@@ -308,18 +601,20 @@ local function notify_missing(model, server)
     local lines = { '本地大模型服务无法启动：' }
 
     if not model then
-        lines[#lines + 1] = '  1. 未找到 GGUF 模型，请自行下载后放到：'
-        lines[#lines + 1] = '     ' .. default_model_path()
-        lines[#lines + 1] = '     或在 Trans.json 中设置 llm.model_path。'
-        lines[#lines + 1] = '     模型下载: https://modelscope.cn/models/Qwen/Qwen2.5-0.5B-Instruct-GGUF'
+        lines[#lines + 1] = '  1. 未找到 GGUF 模型。'
+        lines[#lines + 1] = '     模型目录: ' .. model_dir(backend)
+        lines[#lines + 1] = '     文件名:   ' .. model_file(backend)
+        lines[#lines + 1] = '     可在 Trans.json / opts.llm 中设置 model_dir、model_file，'
+        lines[#lines + 1] = '     或设置 auto_download_model = true 自动下载。'
+        lines[#lines + 1] = '     模型来源: ' .. MODEL_BASE_URL
     end
 
     if not server then
         lines[#lines + 1] = '  2. 未找到 llama-server，且自动下载已关闭。'
-        lines[#lines + 1] = '     删除 Trans.json 中的 auto_download = false，或设置 llm.server_bin。'
+        lines[#lines + 1] = '     设置 auto_download = true，或设置 llm.server_bin。'
     end
 
-    notify(table.concat(lines, '\n'), vim.log.levels.ERROR)
+    notify_local_failure(table.concat(lines, '\n'))
 end
 
 ---Check the llama.cpp health endpoint.
@@ -454,7 +749,7 @@ function M.ensure_started(callback, opts)
     local function fail(message)
         state.starting = false
         if message and message ~= '' then
-            notify(message, vim.log.levels.ERROR)
+            notify_local_failure(message)
         end
         flush(true) -- still try baidu / youdao fallback
     end
@@ -503,22 +798,7 @@ function M.ensure_started(callback, opts)
         vim.defer_fn(poll, 300)
     end
 
-    check_health(health_url, function(ok)
-        if ok then
-            state.ready = true
-            state.starting = false
-            flush(true)
-            return
-        end
-
-        local model = M.find_model(backend.model_path)
-        if not model then
-            state.starting = false
-            notify_missing(nil, true)
-            flush(true)
-            return
-        end
-
+    local function ensure_server(model)
         local server = M.find_server(backend.server_bin)
         if server then
             start_server(model, server)
@@ -527,12 +807,11 @@ function M.ensure_started(callback, opts)
 
         if backend.auto_download == false then
             state.starting = false
-            notify_missing(model, nil)
+            notify_missing(backend, model, nil)
             flush(true)
             return
         end
 
-        -- The service is installed on first use; the model stays user-managed.
         download_server(backend, function(downloaded, err)
             if not downloaded then
                 fail(err)
@@ -548,11 +827,42 @@ function M.ensure_started(callback, opts)
             notify('llama-server 已安装: ' .. installed, vim.log.levels.INFO)
             start_server(model, installed)
         end)
+    end
+
+    check_health(health_url, function(ok)
+        if ok then
+            state.ready = true
+            state.starting = false
+            flush(true)
+            return
+        end
+
+        local model = M.find_model(backend.model_path, backend)
+        if model then
+            ensure_server(model)
+            return
+        end
+
+        if backend.auto_download_model == false then
+            state.starting = false
+            notify_missing(backend, nil, M.find_server(backend.server_bin))
+            flush(true)
+            return
+        end
+
+        M.ensure_model(backend, function(downloaded, path)
+            if not downloaded or not path then
+                state.starting = false
+                flush(true)
+                return
+            end
+            ensure_server(path)
+        end)
     end)
 end
 
 ---Short status used by :checkhealth.
----@return { running: boolean, uri: string?, model: string?, server: string?, log: string? }
+---@return { running: boolean, uri: string?, model: string?, server: string?, log: string?, model_dir: string?, model_file: string?, auto_download_model: boolean? }
 function M.status()
     local backend = Trans.backend.llm
     local _, _, health_url = M.parse_uri(backend.uri)
@@ -566,9 +876,12 @@ function M.status()
     return {
         running = running,
         uri = backend.uri,
-        model = M.find_model(backend.model_path),
+        model = M.find_model(backend.model_path, backend),
+        model_dir = model_dir(backend),
+        model_file = model_file(backend),
         server = M.find_server(backend.server_bin),
         log = expand(backend.log_path) or (vim.fn.stdpath 'cache' .. '/Trans-llm.log'),
+        auto_download_model = backend.auto_download_model ~= false,
     }
 end
 

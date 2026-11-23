@@ -53,7 +53,32 @@ end
 ---@param config table?
 ---@return boolean
 local function has_credentials(config)
-    return config ~= nil and config.disable ~= true and config.app_id ~= nil and config.app_passwd ~= nil
+    return config ~= nil
+        and config.disable ~= true
+        and type(config.app_id) == 'string'
+        and config.app_id ~= ''
+        and type(config.app_passwd) == 'string'
+        and config.app_passwd ~= ''
+end
+
+
+---Describe the configuration state of an online backend.
+---@param config table?
+---@return 'configured' | 'disabled' | 'missing' | 'incomplete'
+local function credential_state(config)
+    if not config then
+        return 'missing'
+    end
+    if type(config.app_id) ~= 'string'
+        or type(config.app_passwd) ~= 'string'
+        or config.app_id == ''
+        or config.app_passwd == '' then
+        return 'incomplete'
+    end
+    if config.disable == true then
+        return 'disabled'
+    end
+    return 'configured'
 end
 
 
@@ -91,11 +116,16 @@ end
 
 ---@class TransBackends
 ---@field all_name string[] all backend names
+---@field states table<string, 'configured'|'disabled'|'missing'|'incomplete'> credential state of online backends
 
 ---@class Trans
 ---@field backend TransBackends
 return setmetatable({
     all_name = all_name,
+    states = {
+        baidu = credential_state(user_conf.baidu),
+        youdao = credential_state(user_conf.youdao),
+    },
 }, {
     __index = function(self, name)
         ---@type TransBackend

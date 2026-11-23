@@ -12,7 +12,8 @@ end
 ---To Do Online Query
 ---@param data TransData @data
 ---@param backend TransOnlineBackend @backend
-local function do_query(data, backend)
+---@param notify_error boolean @show backend errors (only when no fallback is left)
+local function do_query(data, backend, notify_error)
     local name      = backend.name
     local uri       = backend.uri
     local method    = backend.method
@@ -35,14 +36,14 @@ local function do_query(data, backend)
     local function handle(output)
         local status, body = pcall(vim.json.decode, output.body or '')
         if not status or type(body) ~= 'table' then
-            if backend.debug then pcall(backend.debug, body, output) end
+            if notify_error and backend.debug then pcall(backend.debug, body, output) end
             data.trace[name] = output
             data.result[name] = false
             return
         end
 
         local f_ok, res = pcall(formatter, body, data)
-        if (not f_ok or not res) and backend.debug then
+        if (not f_ok or not res) and notify_error and backend.debug then
             pcall(backend.debug, body, output)
         end
         data.result[name] = f_ok and res or false
@@ -70,14 +71,45 @@ local function do_query(data, backend)
     end
 end
 
+---Whether baidu/youdao is configured as a fallback.
+---@return boolean
+local function has_online_backend()
+    for _, name in ipairs(Trans.backend.all_name) do
+        if name ~= 'llm' then
+            return true
+        end
+    end
+    return false
+end
+
+
+---Prompt the user to configure an online backend when everything failed.
+local function prompt_online_setup()
+    if has_online_backend() then
+        return
+    end
+
+    vim.notify(table.concat({
+        '翻译失败，且没有配置在线备用 API（百度 / 有道）。',
+        '请在 ' .. Trans.conf.dir .. '/Trans.json 中设置：',
+        '  "baidu":  { "app_id": "...", "app_passwd": "...", "disable": false }',
+        '  "youdao": { "app_id": "...", "app_passwd": "...", "disable": false }',
+        '配置后运行 :checkhealth Trans 检查。',
+    }, '\n'), vim.log.levels.ERROR)
+end
+
+
 ---@type table<string, fun(data: TransData):boolean>
 local strategy = {
     fallback = function(data)
         local result = data.result
         local update = data.frontend:wait()
+        local online = has_online_backend()
 
-        for _, backend in ipairs(data.backends) do
-            do_query(data, backend)
+        for i, backend in ipairs(data.backends) do
+            -- Only report a backend error when no fallback remains. If the local
+            -- model fails but baidu/youdao succeeds, the user sees no error.
+            do_query(data, backend, online and i == #data.backends)
 
             local name = backend.name
             ---@cast backend TransBackend
@@ -127,6 +159,7 @@ local function process(opts)
         Trans.cache[data.str] = data
         data.frontend:process(data)
     else
+        prompt_online_setup()
         data.frontend:fallback()
     end
 end

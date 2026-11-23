@@ -68,15 +68,46 @@ local function check_llm()
         if status.model then
             ok(string.format('GGUF model: %s', status.model))
         else
-            warn('GGUF model not found; download it and place it in ~/models/qwen2.5-0.5b-instruct/ (see README)')
+            warn(string.format('GGUF model not found: %s/%s', status.model_dir, status.model_file))
+            if status.auto_download_model then
+                warn('The model will be downloaded automatically on :TransInstall or first :Translate')
+            else
+                warn('auto_download_model = false; download the model manually or set llm.model_dir/model_path')
+            end
         end
 
         if status.server then
             ok(string.format('llama-server: %s', status.server))
         elseif backend.auto_download ~= false then
-            warn('llama-server not installed yet; it will be downloaded automatically on first :Translate')
+            warn('llama-server not installed yet; it will be downloaded automatically on :TransInstall or first :Translate')
         else
             warn('llama-server not found and auto_download is disabled; install llama.cpp or set llm.server_bin')
+        end
+    end
+end
+
+
+---Report whether baidu / youdao fallbacks have credentials.
+local function check_online_backends()
+    local states = Trans.backend.states or {}
+    local names = { baidu = '百度', youdao = '有道' }
+
+    for _, name in ipairs { 'baidu', 'youdao' } do
+        local state = states[name]
+        local label = names[name]
+
+        if state == 'configured' then
+            ok(string.format('%s API: configured', label))
+        elseif state == 'disabled' then
+            warn(string.format('%s API: credentials found but disable = true', label))
+        else
+            error(string.format(
+                '%s API: app_id / app_passwd not configured. '
+                    .. 'Edit %s/Trans.json and set app_id, app_passwd, disable = false. '
+                    .. 'Without it Trans cannot fall back when the local model is unavailable.',
+                label,
+                Trans.conf.dir
+            ))
         end
     end
 end
@@ -110,6 +141,7 @@ local function check()
     check_neovim_version()
     check_configure_file()
     check_llm()
+    check_online_backends()
     check_binary_dependencies()
 end
 

@@ -20,6 +20,11 @@ command('TransPlay', function()
 end, { desc = ' Auto play' })
 
 
+command('TransInstall', function()
+    require('Trans').install()
+end, { desc = ' Install / check local model and llama-server' })
+
+
 string.width = api.nvim_strwidth
 
 local system = Trans.system

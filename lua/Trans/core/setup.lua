@@ -41,6 +41,21 @@ local function define_highlights(conf)
 end
 
 
+---Merge llm options from the Neovim config into the LLM backend.
+---Trans.json is loaded first, so these values take precedence.
+---@param conf TransConf
+local function apply_llm_opts(conf)
+    if type(conf.llm) ~= 'table' then
+        return
+    end
+
+    local backend = Trans.backend.llm
+    for key, value in pairs(conf.llm) do
+        backend[key] = value
+    end
+end
+
+
 ---@class Trans
 ---@field setup fun(opts: { mode: string, mode: string })
 return function(opts)
@@ -51,5 +66,6 @@ return function(opts)
     conf.dir = vim.fn.expand(conf.dir)
 
     set_strategy_opts(conf)
+    apply_llm_opts(conf)
     define_highlights(conf)
 end

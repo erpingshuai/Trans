@@ -11,8 +11,12 @@
 ---@field dict_prompt? string prompt used to fetch IPA / POS / English definition
 ---@field auto_start? boolean start a local llama.cpp server on first use
 ---@field auto_download? boolean download llama.cpp when llama-server is missing
+---@field auto_download_model? boolean download the GGUF model when it is missing
 ---@field server_url? string override the llama.cpp release download URL
----@field model_path? string path to the GGUF file
+---@field model_path? string path to the GGUF file (highest priority)
+---@field model_dir? string directory where the GGUF model is stored
+---@field model_file? string GGUF file name inside model_dir
+---@field model_url? string override the GGUF download URL
 ---@field server_bin? string path to the llama-server binary
 ---@field ctx? integer llama.cpp context size
 ---@field threads? integer llama.cpp threads (0 = auto)
@@ -30,13 +34,17 @@ local M = {
     name         = 'llm',
     name_zh      = '大模型',
     method       = 'post',
-    -- First-use experience: download llama-server and start it automatically.
-    -- The GGUF model is always provided by the user.
-    auto_start    = true,
-    auto_download = true,
-    ctx           = 4096,
-    threads       = 0,
-    start_timeout = 120,
+    -- First-use experience: download llama-server and the GGUF model, then start
+    -- the service automatically. Set auto_download_model = false to manage the
+    -- model manually.
+    auto_start          = true,
+    auto_download       = true,
+    auto_download_model = true,
+    -- model_dir defaults to the plugin directory itself when auto_download_model is on.
+    model_file          = 'qwen2.5-0.5b-instruct-q4_k_m.gguf',
+    ctx                 = 4096,
+    threads             = 0,
+    start_timeout       = 120,
 }
 
 local Trans = require 'Trans'
